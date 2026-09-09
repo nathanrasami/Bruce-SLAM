@@ -23,6 +23,7 @@ from bruce_slam.slam_objects import (
     ICPResult,
     SMParams,
 )
+from bruce_slam.sonar_context import cosine_distance_shifted
 
 
 class SLAM(object):
@@ -94,6 +95,13 @@ class SLAM(object):
         self.nssm_params.max_rotation = np.pi / 2
         self.nssm_params.source_frames = 5
         self.nssm_params.cov_samples = 30
+        # Plafond des bornes de recherche shgo (init ICP global). Sans boucle
+        # fermée, la covariance accumulée explose (±130 m mesuré) et shgo
+        # échantillonne trop grossièrement pour converger → 0 boucle. On borne
+        # au domaine physique où une vraie boucle peut exister (recouvrement
+        # sonar + dérive locale). Surchargé par le YAML (nssm/shgo_*).
+        self.nssm_params.shgo_max_translation = 20.0
+        self.nssm_params.shgo_max_rotation = np.pi
 
         # define ICP
         self.icp = pcl.ICP()
@@ -103,6 +111,39 @@ class SLAM(object):
         self.nssm_queue = []  # the loop closur queue
         self.pcm_queue_size = 5  # default val
         self.min_pcm = 3  # default val
+
+        # SONAR Context (Kim, ICRA 2023) — remplace la DÉTECTION de candidat
+        # du NSSM (gating covariance + argmax counts) par de la place
+        # recognition par apparence. Tout l'aval (shgo, ICP+cov, PCM) inchangé.
+        self.sc_enable = False
+        self.sc_knn = 5                # candidats retenus par la Polar Key
+        self.sc_dist_threshold = 0.35  # distance cosinus max pour valider
+        self.sc_max_azimuth_shift = 10
+        self.sc_max_range_shift = 5
+        self.sc_log = []  # (source, target, dist, shift_az, shift_rg, retenu, dz)
+        self.nssm_log = []  # (source, target, stage, detail) — étage TERMINAL de
+        # chaque tentative NSSM (funnel aval : init/shgo/ICP/gates/PCM)
+
+        # USBL — facteurs de POSITION ABSOLUE acoustique (ancrage indépendant de
+        # la GT). Prouvé en sandbox (usbl_sim.py) : ~3 m lisse vs 47 m en
+        # dead-reckoning seul. Chaque fix devient un prior unaire robuste qui ne
+        # contraint que x,y (le cap reste géré par l'odométrie). cf. USBL_FACTEURS.md
+        self.usbl_enable = False
+        self.usbl_sigma = 1.4       # m, bruit d'un fix (médiane mesurée vs GT)
+        self.usbl_flip_y = False    # néger Y des fixes (repère DISO réfléchi) ; cf. add_usbl
+        self.usbl_max_dt = 1.0      # s, fenêtre d'association fix ↔ keyframe
+        self.usbl_buffer = []       # (t, x, y) fixes acceptés, rempli par slam_ros
+        self.usbl_added = 0         # nb de facteurs USBL réellement ajoutés
+        # Recalage automatique repère monde→odométrie (rotation+réflexion, sans scale).
+        # Remplace le flip_y codé en dur : DISO sort un repère réfléchi+TOURNÉ qu'un flip
+        # d'axe fixe ne réconcilie pas. Estimé en ligne depuis (pose odom, fix USBL).
+        self.usbl_align_enable = False    # activé via param usbl/align_enable (DISO seult)
+        self.usbl_align_min_pairs = 8     # paires (pose,fix) avant d'estimer la transfo
+        self.usbl_align_min_span = 4.0    # m, étendue min sur la 2e dim PCA (aire, pas ligne)
+        self.usbl_align_lock_margin = 2.0  # m, écart résidu rotation vs réflexion pour trancher
+        self._usbl_align_pairs = []       # (odom_x, odom_y, world_x, world_y)
+        self._usbl_world2odom = None      # (R 2x2, t 2,) estimée ; None tant que pas prête
+        self._usbl_align_locked = False   # True quand la transfo est fiable et figée
 
         # Use fixed noise model in two cases
         # - Sequential scan matching
@@ -452,6 +493,121 @@ class SLAM(object):
         )
         self.graph.add(factor)
         self.values.insert(X(self.current_key), keyframe.pose)
+
+    def add_usbl(self, keyframe: Keyframe) -> None:
+        """Ajoute un facteur de POSITION ABSOLUE USBL sur le keyframe courant, si un
+        fix acoustique tombe dans la fenêtre ±usbl_max_dt autour de son timestamp.
+
+        C'est un prior unaire ROBUSTE (Cauchy) qui ne contraint QUE x,y : on met un
+        sigma θ énorme (1e6) → le cap reste libre, géré par l'odométrie. L'optimiseur
+        gtsam recolle ainsi la trajectoire sur les ancres USBL en moyennant leur bruit
+        (~1.4 m) et en rejetant les outliers acoustiques via le noyau robuste.
+        Indépendant de la GT (USBL = capteur acoustique distinct). cf. USBL_FACTEURS.md
+        """
+        if not self.usbl_enable or not self.usbl_buffer:
+            return
+        t = keyframe.time.to_sec()
+        # fix le plus proche en temps (recherche linéaire ; buffer ~1000 fixes max)
+        best, bdt = None, self.usbl_max_dt
+        for ut, ux, uy in self.usbl_buffer:
+            dt = abs(ut - t)
+            if dt < bdt:
+                bdt, best = dt, (ux, uy)
+        if best is None:
+            return
+        ux, uy = best
+        # Recalage de repère monde→odométrie. DISO sort un repère RÉFLÉCHI+TOURNÉ par
+        # rapport au monde (det(R)=-1 + angle fixé au seed), qu'un flip d'axe codé en
+        # dur ne peut pas réconcilier (cf. offline_sim : meilleur flip = 20 m). On estime
+        # donc la transfo rigide+réflexion (Umeyama 2D AVEC réflexion, sans scale) à
+        # partir des paires (pose odométrie du KF, fix USBL) accumulées — GT-free.
+        # Tant que la transfo n'est pas estimée, on bufferise et on n'ajoute pas encore.
+        if self.usbl_flip_y:
+            uy = -uy  # legacy : flip Y explicite si demandé (modes non-DISO)
+        if self.usbl_align_enable:
+            self._usbl_align_pairs.append(
+                (keyframe.pose.x(), keyframe.pose.y(), ux, uy))
+            # Ré-estime tant que pas convergé : avec peu de paires (trajectoire quasi
+            # rectiligne) Umeyama ne distingue pas réflexion/rotation → on raffine au fil
+            # de l'eau jusqu'à ce que l'aire couverte soit suffisante (transfo stable).
+            if not self._usbl_align_locked:
+                self._estimate_usbl_alignment()
+            if self._usbl_world2odom is None:
+                return  # pas encore estimable (pas assez de paires/d'aire) → on attend
+            ux, uy = self._apply_usbl_alignment(ux, uy)
+        # prior position-only robuste : sigma x,y = usbl_sigma ; sigma θ = 1e6 (libre)
+        model = self.create_robust_noise_model(self.usbl_sigma, self.usbl_sigma, 1e6)
+        factor = gtsam.PriorFactorPose2(X(self.current_key), gtsam.Pose2(ux, uy, 0.0), model)
+        self.graph.add(factor)
+        self.usbl_added += 1
+        # DIAG : trace chaque facteur USBL ajouté (fix vs pose odom courante) pour
+        # vérifier que l'USBL agit réellement sur le back-end (sinon 0 correction).
+        try:
+            import rospy as _rospy
+            px, py = keyframe.pose.x(), keyframe.pose.y()
+            _rospy.loginfo("USBL factor #%d on KF%d: fix=(%.2f,%.2f) odom=(%.2f,%.2f) dist=%.2fm dt=%.2fs",
+                           self.usbl_added, self.current_key, ux, uy, px, py,
+                           ((ux - px) ** 2 + (uy - py) ** 2) ** 0.5, bdt)
+        except Exception:
+            pass
+
+    def _estimate_usbl_alignment(self) -> None:
+        """Estime la transfo monde→odométrie (rotation OU réflexion + translation, sans
+        scale) sur les paires (pose odom, fix USBL) accumulées. GT-free.
+
+        Le repère DISO peut être réfléchi (det=-1) OU non (det=+1) selon le seed ; on ne
+        peut pas le savoir a priori. On estime DONC les DEUX hypothèses (Umeyama rotation
+        pure + Umeyama réflexion) et on garde celle au meilleur résidu. Cf. offline : avec
+        trop peu de courbure 2D les deux se valent → on ne verrouille que quand la
+        réflexion est tranchée (un cas nettement meilleur) ET l'aire 2D est suffisante."""
+        pairs = self._usbl_align_pairs
+        if len(pairs) < self.usbl_align_min_pairs:
+            return
+        P = np.array(pairs, dtype=float)
+        odom = P[:, :2]   # repère odométrie (cible)
+        world = P[:, 2:]  # repère monde (source = fixes USBL)
+        mw, mo = world.mean(0), odom.mean(0)
+        wc, oc = world - mw, odom - mo
+        H = wc.T @ oc / len(P)
+        U, S, Vt = np.linalg.svd(H)
+
+        def make(reflect):
+            D = np.eye(2)
+            if reflect:
+                D[1, 1] = -1
+            R = (U @ D @ Vt).T
+            t = mo - R @ mw
+            res = float(np.median(np.linalg.norm((world @ R.T + t) - odom, axis=1)))
+            return R, t, res
+
+        # Umeyama standard force det>0 ; on génère explicitement les deux signes.
+        rot = make(False)
+        refl = make(True)
+        best = min(rot, refl, key=lambda x: x[2])
+        R, t, res = best
+        self._usbl_world2odom = (R, t)
+        # Verrouille quand : (1) aire 2D suffisante (2e val. sing. PCA) — sinon le choix
+        # rotation/réflexion n'est pas observable ; (2) une hypothèse domine nettement
+        # l'autre (sinon ambiguïté). Évite de figer une transfo dégénérée trop tôt.
+        svals = np.linalg.svd(wc, compute_uv=False) / max(len(P) ** 0.5, 1.0)
+        margin = abs(rot[2] - refl[2])
+        if (svals[-1] >= self.usbl_align_min_span
+                and margin >= self.usbl_align_lock_margin
+                and len(P) >= 2 * self.usbl_align_min_pairs):
+            self._usbl_align_locked = True
+        try:
+            import rospy as _rospy
+            _rospy.loginfo("USBL alignment (%d paires): det(R)=%.2f résidu=%.2fm svals=[%.1f,%.1f] %s",
+                           len(P), np.linalg.det(R), res, svals[0], svals[-1],
+                           "LOCKED" if self._usbl_align_locked else "")
+        except Exception:
+            pass
+
+    def _apply_usbl_alignment(self, ux: float, uy: float):
+        """Applique la transfo monde→odométrie estimée à un fix USBL."""
+        R, t = self._usbl_world2odom
+        v = R @ np.array([ux, uy]) + t
+        return float(v[0]), float(v[1])
 
     def get_map(self, frames, resolution=None):
         # Implemented in slam_node
@@ -872,47 +1028,65 @@ class SLAM(object):
         # Target points in global frame
         target_points, target_keys = self.get_points(target_frames, None, True)
 
-        # Loop over the source frames
-        # Eliminate frames that do not have points in the same field of view
-        sel = np.zeros(len(target_points), np.bool)
-        for source_frame in source_frames:
+        if self.sc_enable:
+            # ===== SONAR Context : sélection du candidat par APPARENCE =====
+            # Remplace le gating covariance+FOV et l'argmax(counts) — la source
+            # des fake loops quand l'odométrie a dérivé. L'aval est inchangé.
+            cand = self.sonar_context_candidate(target_frames)
+            if cand is None:
+                ret.status = STATUS.NOT_ENOUGH_POINTS
+                ret.status.description = "sonar context: no candidate"
+                return ret
+            ret.target_key = cand[0]
+            if len(target_points) < self.nssm_params.min_points:
+                ret.status = STATUS.NOT_ENOUGH_POINTS
+                ret.status.description = "target points {}".format(len(target_points))
+                return ret
+            cov = self.keyframes[ret.source_key].cov  # bornes shgo plus bas
+        else:
+            # ===== Détection géométrique d'origine (Bruce) =====
+            # Loop over the source frames
+            # Eliminate frames that do not have points in the same field of view
+            sel = np.zeros(len(target_points), np.bool)
+            for source_frame in source_frames:
 
-            # pull the pose and covariance info
-            pose = self.keyframes[source_frame].pose
-            cov = self.keyframes[source_frame].cov
+                # pull the pose and covariance info
+                pose = self.keyframes[source_frame].pose
+                cov = self.keyframes[source_frame].cov
 
-            # parse the covariance
-            translation_std = np.sqrt(np.max(np.linalg.eigvals(cov[:2, :2])))
-            rotation_std = np.sqrt(cov[2, 2])
-            range_bound = translation_std * 5.0 + self.oculus.max_range
-            bearing_bound = rotation_std * 5.0 + self.oculus.horizontal_aperture * 0.5
+                # parse the covariance
+                translation_std = np.sqrt(np.max(np.linalg.eigvals(cov[:2, :2])))
+                rotation_std = np.sqrt(cov[2, 2])
+                range_bound = translation_std * 5.0 + self.oculus.max_range
+                bearing_bound = rotation_std * 5.0 + self.oculus.horizontal_aperture * 0.5
 
-            # figure out the uncertain points
-            local_points = Keyframe.transform_points(target_points, pose.inverse())
-            ranges = np.linalg.norm(local_points, axis=1)
-            bearings = np.arctan2(local_points[:, 1], local_points[:, 0])
-            sel_i = (ranges < range_bound) & (abs(bearings) < bearing_bound)
-            sel |= sel_i
+                # figure out the uncertain points
+                local_points = Keyframe.transform_points(target_points, pose.inverse())
+                ranges = np.linalg.norm(local_points, axis=1)
+                bearings = np.arctan2(local_points[:, 1], local_points[:, 0])
+                sel_i = (ranges < range_bound) & (abs(bearings) < bearing_bound)
+                sel |= sel_i
 
-        # only keep the certain points
-        target_points = target_points[sel]
-        target_keys = target_keys[sel]
+            # only keep the certain points
+            target_points = target_points[sel]
+            target_keys = target_keys[sel]
 
-        # Check which frame has the most points nearby
-        target_frames, counts = np.unique(np.int32(target_keys), return_counts=True)
-        target_frames = target_frames[counts > 10]
-        counts = counts[counts > 10]
+            # Check which frame has the most points nearby
+            target_frames, counts = np.unique(np.int32(target_keys), return_counts=True)
+            target_frames = target_frames[counts > 10]
+            counts = counts[counts > 10]
 
-        # check the aggragate cloud for num of points
-        if len(target_frames) == 0 or len(target_points) < self.nssm_params.min_points:
-            ret.status = STATUS.NOT_ENOUGH_POINTS
-            ret.status.description = "target points {}".format(len(target_points))
-            return ret
+            # check the aggragate cloud for num of points
+            if len(target_frames) == 0 or len(target_points) < self.nssm_params.min_points:
+                ret.status = STATUS.NOT_ENOUGH_POINTS
+                ret.status.description = "target points {}".format(len(target_points))
+                return ret
 
-        # populate the initilization object with some info
-        ret.target_key = target_frames[
-            np.argmax(counts)
-        ]  # this is critical, the one with the most points overlapping
+            # populate the initilization object with some info
+            ret.target_key = target_frames[
+                np.argmax(counts)
+            ]  # this is critical, the one with the most points overlapping
+
         ret.target_pose = self.keyframes[ret.target_key].pose
         ret.target_points = Keyframe.transform_points(
             target_points, ret.target_pose.inverse()
@@ -930,6 +1104,15 @@ class SLAM(object):
             rotation_std = np.sqrt(cov[2, 2])
             pose_stds = np.array([[translation_std, translation_std, rotation_std]]).T
             pose_bounds = 5.0 * np.c_[-pose_stds, pose_stds]
+
+            # Plafond physique : la covariance accumulée (sans boucle) gonfle les
+            # bornes à ±130 m pour un sonar de ~48 m → shgo ne converge jamais.
+            # On borne au domaine où une boucle est plausible. Bénéficie aux deux
+            # chemins (SONAR Context et gating géométrique d'origine).
+            cap = np.array([[self.nssm_params.shgo_max_translation],
+                            [self.nssm_params.shgo_max_translation],
+                            [self.nssm_params.shgo_max_rotation]])
+            pose_bounds = np.clip(pose_bounds, -cap, cap)
 
             # TODO remove
             # ret.occ = self.get_map(target_frames)
@@ -1000,6 +1183,82 @@ class SLAM(object):
 
         return ret
 
+    def sonar_context_candidate(self, target_frames) -> tuple:
+        """Sélection du candidat loop closure par SONAR Context (Kim, ICRA 2023).
+
+        1) kNN brute-force sur les Polar Keys (euclidien) — rapide, < 1000 keyframes
+        2) distance cosinus avec adaptive shifting sur les k meilleurs
+        3) candidat retenu si distance < sc_dist_threshold
+        Toute décision est tracée dans self.sc_log (validation étape 5).
+
+        Args:
+            target_frames: indices des keyframes candidats (déjà filtrés min_st_sep)
+
+        Returns:
+            (target_key, dist, shift_azimuth, shift_range) ou None si pas de candidat.
+        """
+        query = self.keyframes[self.current_key - 1]
+        if query.ring_key is None or query.context is None:
+            return None
+        cands = [k for k in target_frames if self.keyframes[k].ring_key is not None]
+        if not cands:
+            return None
+
+        # 0) Porte géométrique : un VRAI revisité est proche dans l'estimé courant
+        # (DISO est bon → vraies boucles <10 m, fausses >34 m : séparation nette,
+        # mesurée sur sc_descriptor_bench). On écarte les candidats invraisemblables
+        # AVANT SC → élimine les faux positifs résiduels du descripteur (FPR ~24%)
+        # sans perdre de vraies boucles. L'apparence propose, la géométrie vérifie.
+        gate = getattr(self, "sc_gate_distance", 20.0)
+        if gate > 0:
+            qx, qy = query.pose.x(), query.pose.y()
+            cands = [
+                k for k in cands
+                if (self.keyframes[k].pose.x() - qx) ** 2
+                + (self.keyframes[k].pose.y() - qy) ** 2 <= gate * gate
+            ]
+            if not cands:
+                return None
+
+        # 0bis) Gate Δz OPTIONNEL (prépa 3D) : deux lieux alignés en plan mais à des
+        # profondeurs différentes s'aliasent en 2.5D ; dr_pose3.z vient de /depth
+        # (pression, absolu, GT-free) et n'est jamais retouché par l'optimisation.
+        # 0 = désactivé (défaut : les configs figées sont inchangées).
+        dz_gate = getattr(self, "sc_dz_gate", 0.0)
+        if dz_gate > 0:
+            qz = query.dr_pose3.z()
+            cands = [
+                k for k in cands
+                if abs(self.keyframes[k].dr_pose3.z() - qz) <= dz_gate
+            ]
+            if not cands:
+                return None
+
+        # 1) Polar Keys → kNN euclidien
+        keys = np.array([self.keyframes[k].ring_key for k in cands])
+        d_pk = np.linalg.norm(keys - np.asarray(query.ring_key)[None, :], axis=1)
+        order = np.argsort(d_pk)[: self.sc_knn]
+
+        # 2) Sonar Context complet sur les kNN seulement (coûteux)
+        best = None
+        for idx in order:
+            k = cands[int(idx)]
+            d, sa, sr = cosine_distance_shifted(
+                query.context,
+                self.keyframes[k].context,
+                self.sc_max_azimuth_shift,
+                self.sc_max_range_shift,
+            )
+            if best is None or d < best[1]:
+                best = (k, d, sa, sr)
+
+        # 3) seuil de validation + journal (étape 5 : precision/recall offline)
+        retenu = best[1] < self.sc_dist_threshold
+        dz = query.dr_pose3.z() - self.keyframes[best[0]].dr_pose3.z()
+        self.sc_log.append((self.current_key - 1, best[0], round(best[1], 4),
+                            best[2], best[3], int(retenu), round(dz, 3)))
+        return best if retenu else None
+
     def add_nonsequential_scan_matching(self) -> ICPResult:
         """Run a loop closure search. Here we compare the most recent keyframe to the
         previous frames. If a loop is found it is subject to geometric verification via PCM.
@@ -1017,6 +1276,9 @@ class SLAM(object):
 
         # if the global ICP call did not work, return
         if not ret.status:
+            self.nssm_log.append((self.current_key - 1,
+                                  -1 if ret.target_key is None else ret.target_key,
+                                  ret.status.name, ret.status.description or ""))
             return
 
         # package the global ICP call result
@@ -1084,7 +1346,12 @@ class SLAM(object):
             if overlap < self.nssm_params.min_points:
                 ret2.status = STATUS.NOT_ENOUGH_OVERLAP
             ret2.status.description = str(overlap)
-            
+
+        # journal du funnel : étage terminal de cette tentative (hors PCM)
+        if not ret2.status:
+            self.nssm_log.append((ret2.source_key, ret2.target_key,
+                                  ret2.status.name, ret2.status.description or ""))
+
         # apply geometric verification, in this case PCM
         if ret2.status:
 
@@ -1099,6 +1366,9 @@ class SLAM(object):
             # log the newest loop closure into the pcm queue and check PCM
             self.nssm_queue.append(ret2)
             pcm = self.verify_pcm(self.nssm_queue,self.min_pcm)
+            self.nssm_log.append((ret2.source_key, ret2.target_key, "PCM",
+                                  "accepted {} / queue {}".format(
+                                      len(pcm), len(self.nssm_queue))))
 
             # if the PCM result has no loop closures for us, the list pcm will be empty
             # loop over any results and add them to the graph

@@ -1,41 +1,55 @@
-# Feature extraction — Aracati2017 (BlueView P900-130, images sonar CARTÉSIENNES).
-# = config Bruce + mode cartésien : Aracati publie /son/compressed (cartésien métrique),
-# pas du OculusPing polaire. Seul ajout au pipeline d'extraction original.
-
-# Constant false alarm rate (CFAR) params for feature extraction
+# Feature extraction config for Aracati2017 dataset (BlueView P900-130, cartesian PNG)
 CFAR:
-  Ntc: 40 # number of training cells
-  Ngc: 10 # number of guard cells
-  Pfa: 0.01 # 0.1 (défaut Bruce) sature le fan d'Aracati de speckle → 0.01
-  rank: 10 # matrix rank
-  alg: 'SOCA' # method of CFAR, SOCA is best
+  Ntc: 40
+  Ngc: 10
+  # 0.1 = 10% des cellules de bruit passent → la carte devient un disque de
+  # speckle (arcs à la portée max). DISO ne garde que gradient>170, lui.
+  Pfa: 0.01
+  rank: 10
+  alg: 'SOCA'
 
-# point cloud filtering params
+  # 65 : BASELINE 120154 (meilleure traj GT-free, 1.44 m). Features DENSES → assez de
+  # points pour l'ICP des loops (12 acceptés vs 6 à seuil 140). Le cloud swirle (fond
+  # inclus) — ASSUMÉ ici : on repart de la MEILLEURE TRAJECTOIRE, le nettoyage du cloud
+  # se fera séparément (le seuil 140 affamait les loops → traj dégradée 5.2 m). cf. 928d0a0.
 filter:
-  threshold: 65 # the min CFAR response to be added to the point cloud
-  resolution: 0.5 # voxel downsampling res
-  radius: 1.0 # outlier rejection radius
-  min_points: 5 # outlier rejection min points
-  skip: 1 # how often to skip a point cloud, use 1
+  threshold: 65
+  resolution: 0.5
+  radius: 1.0
+  min_points: 5
+  skip: 1
 
-# the vis params
 visualization:
   coordinates: 'cartesian'
   radius: 2
   color: [0, 165, 255]
 
-# are we using compressed imagary (Oculus) — non : mode cartésien ci-dessous
 compressed_images: False
 
-# Mode cartésien Aracati : lit /son/compressed, image cartésienne métrique (m/px uniforme)
+# Aracati2017 cartesian mode
 cartesian_mode: True
 cartesian:
   fov_deg: 130.0
-  max_range: 48.2896       # portée calibrée (échelle m/px de l'image Aracati)
-  max_cloud_range: 48.2896 # cap de portée du nuage = portée max
-  # FIX TOURBILLON (2026-07-02, porté depuis Bruce_Sonar_USBL) : y latéral en
-  # convention PROPRE (y=+gauche), cohérente avec le cap cmd_vel. L'ancien signe
-  # (« même signe que DISO ») peignait chaque scan EN MIROIR du cap → carte
-  # tourbillon + SSM/NSSM initialisés à contre-sens (leurs échecs pré-fix sont
-  # caducs, cf. le protocole d'ablation). ⚠ False si odométrie DISO (repère réfléchi).
+  # même valeur que DISO (config_aracati2017.yaml, Range calibré par SIM3) :
+  # le nuage et les poses DISO doivent partager la même échelle m/px
+  max_range: 48.2896
+  # Cap de portée du NUAGE désactivé : le seuil d'intensité 140 gère le fond à
+  # toute distance (les structures brillantes survivent, le fond non). = max_range.
+  max_cloud_range: 48.2896
+  # FIX TOURBILLON (2026-07-02) : y latéral en convention PROPRE (y=+gauche),
+  # cohérente avec le cap de l'odométrie cmd_vel (θ≈ψ monde). L'ancien signe
+  # ("même signe que DISO") peignait chaque scan EN MIROIR du cap → la carte
+  # entière se smearait en arcs (tourbillon). Prouvé offline sur 150034/150959 :
+  # NN médian 0.365→0.208, aire 0.5m 24223→11673 cellules, quai en T visible.
+  # ⚠ Mettre False si odom_source=diso (le repère DISO est lui-même réfléchi).
   flip_bearing: True
+
+# SONAR Context (place recognition pour loop closure)
+sonar_context:
+  enable: True
+  num_azimuth: 40
+  num_range: 40
+  # seuil d'intensité du descripteur : ne garde que les retours forts (structure).
+  # Le max-pooling de l'intensité brute saturait (AUC 0.55) ; la densité au-dessus
+  # de ce seuil discrimine (AUC 0.86, sc_descriptor_bench.py). Pic vers 95-110.
+  intensity_threshold: 95

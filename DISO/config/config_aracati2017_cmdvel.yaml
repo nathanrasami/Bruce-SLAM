@@ -1,0 +1,21 @@
+%YAML:1.0
+
+# Variante GT-FREE : DISO lit l'odométrie cmd_vel intégrée (/cmd_vel/pose) comme
+# prior de mouvement, au lieu de la vérité terrain /pose_gt. cf. extirpation /pose_gt.
+SonarTopic: "/son"
+OdomTopic: "/cmd_vel/pose"
+Range: 48.2896 # range was scaled by SIM3 alignment with GT because of the sacle issue mentioned in the paper
+GradientThreshold: 170.0 # 0~255
+PyramidLayer: 3
+FOV: 130.0
+GradientInlierThreshold: 50.0
+LossThreshold: 100
+#transformation matrix from sonar to body frame
+Tbs: !!opencv-matrix
+  rows: 4
+  cols: 4
+  dt: f
+  data: [ 1.000000000,  0.000000000,  0.000000000,  0.0,
+          0.000000000,  1.000000000,  0.000000000,  0.0,
+          0.000000000,  0.000000000,  1.000000000,  0.0,
+          0.000000000,  0.000000000,  0.000000000,  1.0 ]

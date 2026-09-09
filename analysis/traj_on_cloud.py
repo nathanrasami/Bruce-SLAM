@@ -17,6 +17,9 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
+
+CMAP_Z = LinearSegmentedColormap.from_list("z_redblue", ["red", "blue"])
 
 
 def _load_cloud(run_dir):
@@ -49,7 +52,7 @@ def plot_traj_on_cloud(run_dir, out_path=None, title=None):
     fig, ax = plt.subplots(figsize=(7.8, 6.8))
     en_3d = z is not None and np.nanstd(z) > 0.2
     if en_3d:
-        sc = ax.scatter(P[:, 0], P[:, 1], s=0.3, c=z, cmap="viridis",
+        sc = ax.scatter(P[:, 0], P[:, 1], s=0.3, c=z, cmap=CMAP_Z,
                         alpha=0.6, linewidths=0)
         plt.colorbar(sc, ax=ax, label="z (m)", shrink=0.8)
     else:

@@ -1,34 +1,128 @@
 <launch>
+    <!-- Bruce-SLAM 2D sur bag HoloOcean (test.bag : /sonar Image polaire 5 Hz,
+         /dvl TwistStamped, /imu, /depth, /ground_truth Odometry, /sonar_points
+         PointCloud2 3D — inutilisé en 2D, cf. SLAM_3D_MIGRATION.md pour la 3D).
+         Lancement : ./run_slam.sh holoocean   (ODOM_SOURCE=dvl pour le DR réaliste) -->
+    <arg name="rviz" default="true"/>
+    <arg name="bag_file" default="$(find bruce_slam)/../test.bag"/>
+    <arg name="rate" default="1.0"/>
+    <!-- odom_source :
+         "gt"  = relay /ground_truth → odométrie parfaite. Valide la CHAÎNE SONAR
+                 (bridge, CFAR, keyframes, export) indépendamment de l'odométrie.
+         "dvl" = dead-reckoning /dvl + /imu (dvl_imu_odom.py) → réaliste embarqué. -->
+    <arg name="odom_source" default="dvl"/>  <!-- MEILLEURE CONFIG (07-03) : dvl = ATE
+         signifiant 0.13 m ; "gt" = validation de chaîne seulement (ATE circulaire ~0). -->
+    <!-- ssm/nssm — MESURÉS (test.bag 07-07 puis bags 3D complets 07-08, ATE Umeyama) :
+         SSM seul 4.79/1.45 m (ICP séquentiel remplace le facteur DVL excellent par un
+         recalage sonar biaisé) → défaut FALSE. NSSM natif sur bag 3D complet : 4 loops
+         tour 2 acceptées → 0.84 m vs 0.03 sans (l'ICP simu rate même les vraies
+         revisites) → défaut FALSE aussi. Loops « sûres » = méthode bs (SC gate :
+         218 retenues/0 fausse acceptée, ATE intact). Parité Bruce : SSM=true NSSM=true. -->
+    <arg name="ssm" default="false"/>
+    <arg name="nssm" default="false"/>
+    <!-- sonar_source : "image" (défaut) = chaîne image polaire -> CFAR (2D actuel).
+         "points3d" = consomme DIRECTEMENT /sonar_points (PointCloud2 du simulateur)
+         via sonar_points_bridge.py — À UTILISER quand le collègue fournira un bag
+         avec z réel (aujourd'hui z=0 partout). Le graphe reste 2D (projection) ;
+         la carte 3D vraie se reconstruit offline. Si le fix 3D n'arrive pas,
+         on reste simplement en "image". -->
+    <arg name="sonar_source" default="$(eval 'points3d' if arg('mode') == '3d' else 'image')"/>
+
+    <!-- ============ PIPELINE UNIFIÉ 2D/3D + MÉTHODE (07-05) ============
+         mode : "2d" (défaut) ou "3d" — choisi AU RUN (./run_slam.sh holoocean 3D).
+           2d → sonar_source=image (chaîne polaire CFAR, bag actuel, z porté = -depth)
+           3d → sonar_source=points3d (PointCloud2 3D du simulateur, bag du collègue)
+         Le reste de la chaîne est IDENTIQUE : le z est porté de bout en bout
+         (dvl_imu_odom publie z=-depth ; CSV avec colonnes z ; RViz est nativement 3D ;
+         les figures python passent en 3D AUTOMATIQUEMENT si std(z)>0.2 —
+         bilan_run/traj_on_cloud colorent par z). Le graphe reste Pose2 (2.5D) :
+         la vraie 3D (Pose3/iSAM2) est l'étape suivante, cf. SLAM_3D_MIGRATION.md.
+         method : "bruce" (défaut, seule implémentée). Point d'extension : le groupe
+         SLAM ci-dessous est gardé par method=='bruce' — pour ajouter une méthode,
+         dupliquer le groupe avec sa config yaml et son if. -->
+    <arg name="mode" default="2d"/>
+    <arg name="method" default="bruce"/>
+    <!-- Portée du sonar horizontal du BAG (traj7 = 20 m ; traj4/5/6 et test.bag = 40).
+         Doit correspondre au RangeMax du générateur, sinon l'échelle bins→m ment. -->
+    <arg name="sonar_range" default="40"/>
+
     <param name="use_sim_time" value="true"/>
+
+    <!-- rejeu du bag. required=true : à la fin du bag (61 s), roslaunch arrête tout
+         → le SLAM écrit les CSV au shutdown. Pas de Ctrl-C nécessaire. -->
+    <node pkg="rosbag" name="rosbag_play" type="play" output="screen" required="true"
+          args="$(arg bag_file) --clock -r $(arg rate) -q"/>
 
     <group ns="bruce">
         <group ns="slam">
 
-            <!-- GT as odometry source (IMU is broken in current bag — see IMU_ISSUE_REPORT.md) -->
-            <node pkg="topic_tools" type="relay" name="gt_odom_relay"
-                  args="/ground_truth /bruce/slam/localization/odom" output="screen"/>
+            <!-- Export GT : /ground_truth (Odometry) → /pose_gt (PoseStamped) ;
+                 slam_ros écrit groundtruth.csv depuis /pose_gt (évaluation SEULEMENT). -->
+            <node pkg="bruce_slam" name="gt_odom_to_pose" type="gt_odom_to_pose.py" output="screen"/>
 
-            <!-- HoloOcean polar sonar → OculusPingUncompressed -->
-            <node pkg="bruce_slam" name="sonar_bridge" type="holoocean_sonar_bridge.py" output="screen"/>
+            <!-- Odométrie (au choix, cf. arg odom_source) -->
+            <node if="$(eval arg('odom_source') == 'gt')" pkg="topic_tools" type="relay"
+                  name="gt_odom_relay" args="/ground_truth /bruce/slam/localization/odom"
+                  output="screen"/>
+            <group if="$(eval arg('odom_source') == 'dvl')">
+                <node pkg="bruce_slam" name="dvl_imu_odom" type="dvl_imu_odom.py" output="screen"/>
+                <node pkg="bruce_slam" name="odom_bridge" type="odom_bridge_node.py" output="screen"/>
+            </group>
 
-            <!-- Feature extraction (polar mode) -->
-            <node pkg="bruce_slam" name="feature_extraction" type="feature_extraction_node.py" output="screen">
-                <rosparam command="load" file="$(find bruce_slam)/config/feature_holoocean.yaml" subst_value="true"/>
-            </node>
+            <!-- Sonar polaire HoloOcean → OculusPingUncompressed (pipeline polaire
+                 NATIF de Bruce — pas de flip_bearing ici, contrairement à Aracati).
+                 Portée : ~range_m ci-dessous (arg sonar_range) ; FOV_DEG reste 120
+                 codé dans holoocean_sonar_bridge.py (identique sur tous nos bags). -->
+            <group if="$(eval arg('sonar_source') == 'image')">
+                <node pkg="bruce_slam" name="sonar_bridge" type="holoocean_sonar_bridge.py" output="screen">
+                    <param name="range_m" value="$(arg sonar_range)"/>
+                </node>
+                <!-- Feature extraction (mode polaire) -->
+                <node pkg="bruce_slam" name="feature_extraction" type="feature_extraction_node.py" output="screen">
+                    <!-- descripteur SONAR Context publié seulement pour la méthode BSU -->
+                    <param name="sonar_context/enable"
+                           value="$(eval arg('method') == 'bruce_sonar')"/>
+                    <rosparam command="load" file="$(find bruce_slam)/config/feature_holoocean.yaml" subst_value="true"/>
+                </node>
+            </group>
+            <!-- 3D-ready : features directes depuis le nuage du simulateur -->
+            <node if="$(eval arg('sonar_source') == 'points3d')" pkg="bruce_slam"
+                  name="sonar_points_bridge" type="sonar_points_bridge.py" output="screen"/>
 
-            <!-- SLAM node -->
-            <node pkg="bruce_slam" name="slam" type="slam_node.py" output="screen">
+            <!-- SLAM node — méthode "bruce" (Bruce original : NSSM natif optionnel) -->
+            <node if="$(eval arg('method') == 'bruce')"
+                  pkg="bruce_slam" name="slam" type="slam_node.py" output="screen">
                 <rosparam command="load" file="$(find bruce_slam)/config/slam_holoocean.yaml" subst_value="true"/>
                 <param name="enable_slam" value="true"/>
+                <param name="ssm/enable" value="$(arg ssm)"/>
+                <param name="nssm/enable" value="$(arg nssm)"/>
                 <param name="save_fig" value="false"/>
                 <param name="save_data" value="true"/>
-                <env name="SLAM_RESULTS_DIR" value="$(find bruce_slam)/../results"/>
+                <!-- dossier de sortie hérité de run_slam.sh ; défaut results/ -->
+                <env name="SLAM_RESULTS_DIR" value="$(optenv SLAM_RESULTS_DIR results)"/>
+            </node>
+
+            <!-- SLAM node — méthode "bruce_sonar" (ex-BSU renommée 07-07 : pas d'USBL
+                 dans les bags holoocean → la contribution Aracati se réduit aux loops
+                 par apparence SONAR Context ; l'aval shgo/ICP/PCM inchangé).
+                 nssm/enable FORCÉ true (SC vit dans la machinerie NSSM). Seuils SC
+                 calibrés Aracati → recalibrer via loops_detected.csv (slam_holoocean.yaml). -->
+            <node if="$(eval arg('method') == 'bruce_sonar')"
+                  pkg="bruce_slam" name="slam" type="slam_node.py" output="screen">
+                <rosparam command="load" file="$(find bruce_slam)/config/slam_holoocean.yaml" subst_value="true"/>
+                <param name="enable_slam" value="true"/>
+                <param name="sonar_context/enable" value="true"/>
+                <param name="ssm/enable" value="$(arg ssm)"/>
+                <param name="nssm/enable" value="true"/>
+                <param name="save_fig" value="false"/>
+                <param name="save_data" value="true"/>
+                <env name="SLAM_RESULTS_DIR" value="$(optenv SLAM_RESULTS_DIR results)"/>
             </node>
 
         </group>
     </group>
 
-    <node type="rviz" name="rviz" pkg="rviz"
+    <node if="$(arg rviz)" type="rviz" name="rviz" pkg="rviz"
           args="-d $(find bruce_slam)/rviz/video.rviz"/>
 
 </launch>

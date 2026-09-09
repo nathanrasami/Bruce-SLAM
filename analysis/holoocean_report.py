@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from traj_eval import umeyama, appliquer, calculer_ate, associer_par_temps
 from paper_eval import ate_premiere_pose
-from traj_on_cloud import plot_traj_on_cloud, _load_cloud
+from traj_on_cloud import plot_traj_on_cloud, _load_cloud, CMAP_Z
 
 DR_LABEL = "DR IMU+DVL (odométrie d'entrée)"
 
@@ -87,7 +87,7 @@ def main(run_dir):
 
     def _cloud(ax):
         if en_3d:
-            sc = ax.scatter(P[:, 0], P[:, 1], s=0.3, c=z, cmap="viridis",
+            sc = ax.scatter(P[:, 0], P[:, 1], s=0.3, c=z, cmap=CMAP_Z,
                             alpha=0.6, linewidths=0)
             return sc
         ax.scatter(P[:, 0], P[:, 1], s=0.15, c="k", alpha=0.4, linewidths=0)

@@ -10,6 +10,15 @@ icp_config: $(find bruce_slam)/config/icp.yaml
 
 point_resolution: 0.3
 
+# SSM off / NSSM on+min_st_sep 25 — MESURÉ 07-07 (7 runs, test.bag, ATE Umeyama) :
+#   SSM+NSSM(sep8) 4.79 · SSM seul 4.79 · NSSM seul(sep8) 0.96/2.52 (NON répétable,
+#   fausses loops court-terme, cf. PIEGES §11) · NSSM(sep25) 0.13 ×2 (0 loop passée,
+#   inoffensif) · tout off 0.13.
+# SSM = coupable principal : l'ICP séquentiel REMPLACE le facteur DVL (excellent)
+# par un recalage sonar biaisé (features simulateur éparses/arcs) → dérive dès KF1.
+# NSSM laissé actif avec sep 25 : neutre ici, prêt pour un bag long (vraies loops).
+# Le Bruce original (jake3991) a ssm/nssm True + sep 8 : parité testable au run :
+#   SSM=true ./run_slam.sh holoocean   (le launch surcharge ssm/nssm via args).
 ssm:
   enable: False
   min_points: 50
@@ -18,8 +27,8 @@ ssm:
   target_frames: 3
 
 nssm:
-  enable: False
-  min_st_sep: 8
+  enable: True
+  min_st_sep: 25
   min_points: 50
   max_translation: 10.0
   max_rotation: deg(60)
@@ -27,7 +36,36 @@ nssm:
   cov_samples: 30
 
 pcm_queue_size: 5
-min_pcm: 4
+min_pcm: 4  # testé 3 le 07-07 : ne change rien (le blocage est l'ICP en aval,
+            # pas le gate) → on garde 4, ne JAMAIS affaiblir les portes (PIEGES §12).
 
 pz_samples: 0
 pz_detection_rate: 0.3
+
+# SONAR Context (méthode "bruce_sonar", ex-BSU : ./run_slam.sh holoocean 2D bs).
+# Remplace la DÉTECTION de candidat du NSSM par la place recognition par apparence ;
+# l'aval (shgo, ICP+cov, PCM) est inchangé. enable est surchargé par le launch selon
+# la méthode — laisser False ici. ⚠ dist_threshold et gate_distance sont CALIBRÉS SUR
+# ARACATI (P900/48 m) : sur le sonar holoocean, recalibrer via loops_detected.csv du
+# premier run (viser des retenus tous vrais ; cf. les runs archives partie 2 et les notes de depannage §12 —
+# ne JAMAIS retirer la porte géométrique).
+sonar_context:
+  enable: False
+  knn: 5
+  dist_threshold: 0.2   # recalibré traj7r 2026-07-13 AVEC intensity_threshold 5 :
+                        # bench 40+40 paires → méd vraies 0.114 / fausses 0.294 (AUC
+                        # 0.85), 0.2 sépare les médianes. ⚠ l'ancien 0.98 « recalibré
+                        # 07-08, run 111933 » mesurait le descripteur DÉGÉNÉRÉ
+                        # (contexte vide → dist≡1.0 ∀ paire). Aracati : 0.70.
+  max_azimuth_shift: 10
+  max_range_shift: 5
+  gate_distance: 10.0
+  dz_gate: 0.0          # gate Δz optionnel (prépa 3D) : |z_src − z_cand| max en m,
+                        # z par /depth. 0 = OFF (défaut figé). Ne se teste que sur
+                        # des revisites multi-z (traj collègue) — cf PROGRESS 14-07.
+  union: False
+# USBL : PAS de capteur USBL dans les bags holoocean → doit rester False
+# (les facteurs d'ancrage absolu de la méthode Aracati n'ont pas de source ici ;
+# si un jour le simulateur publie un équivalent, cf. les garde-fous HoloOcean §5).
+usbl:
+  enable: False

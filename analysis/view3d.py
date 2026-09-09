@@ -19,7 +19,7 @@ import webbrowser
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from traj_on_cloud import _load_cloud
+from traj_on_cloud import _load_cloud, CMAP_Z
 
 MAX_PTS = 300000  # WebGL reste fluide en dessous ; au-delà on sous-échantillonne
 
@@ -45,7 +45,7 @@ def _plotly(run_dir, save_only):
     fig = go.Figure()
     fig.add_trace(go.Scatter3d(
         x=P[:, 0], y=P[:, 1], z=z, mode="markers", name=f"nuage ({src})",
-        marker=dict(size=1.6, color=z, colorscale="Viridis", opacity=0.75,
+        marker=dict(size=1.6, color=z, colorscale=[[0, "red"], [1, "blue"]], opacity=0.75,
                     colorbar=dict(title="z (m)", len=0.6)),
         hovertemplate="x %{x:.1f} · y %{y:.1f} · z %{z:.2f} m<extra></extra>"))
     fig.add_trace(go.Scatter3d(
@@ -83,7 +83,7 @@ def _matplotlib_fallback(run_dir, save_only):
     P, z, src, traj, tz = _load(run_dir)
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection="3d")
-    sc = ax.scatter(P[:, 0], P[:, 1], z, s=1.2, c=z, cmap="viridis",
+    sc = ax.scatter(P[:, 0], P[:, 1], z, s=1.2, c=z, cmap=CMAP_Z,
                     alpha=0.55, linewidths=0)
     fig.colorbar(sc, ax=ax, label="z (m)", shrink=0.6)
     ax.plot(traj["x"], traj["y"], tz, color="red", lw=1.8, label="trajectoire SLAM")

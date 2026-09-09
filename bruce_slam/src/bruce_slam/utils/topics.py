@@ -13,9 +13,11 @@ DVL_TOPIC = "/rti/body_velocity/raw"
 DEPTH_TOPIC = "/bar30/depth/raw"
 SONAR_TOPIC = "/sonar_oculus_node/M750d/ping"
 SONAR_TOPIC_UNCOMPRESSED = "/sonar_oculus_node/ping"
-SONAR_TOPIC_CARTESIAN = "/son/compressed"  # Aracati : images sonar cartésiennes (pas OculusPing)
+SONAR_TOPIC_CARTESIAN = "/son/compressed"
 SONAR_VERTICAL_TOPIC = "/sonar_oculus_node/M1200d/ping"
 GYRO_TOPIC = "/gyro"
+ODOM_BRIDGE_INPUT_TOPIC = "/direct_sonar/pose"
+USBL_TOPIC = "/usbl_point"  # positionnement acoustique absolu (facteurs USBL)
 
 
 SLAM_NS = "/bruce/slam/"
@@ -35,3 +37,4 @@ MAPPING_OCCUPANCY_TOPIC = SLAM_NS + "mapping/occupancy"
 MAPPING_GET_MAP_SERVICE = SLAM_NS + "mapping/get_map"
 SONAR_FEATURE_TOPIC = SLAM_NS + "feature_extraction/feature"
 SONAR_FEATURE_IMG_TOPIC = SLAM_NS + "feature_extraction/feature_img"
+SONAR_DESCRIPTOR_TOPIC = SLAM_NS + "feature_extraction/descriptor"  # SONAR Context + Polar Key
