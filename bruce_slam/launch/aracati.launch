@@ -1,57 +1,154 @@
 <launch>
-    <!-- Bruce-SLAM ORIGINAL sur le dataset Aracati2017.
-         Aracati n'a ni IMU ni DVL et publie des images sonar cartésiennes : seuls
-         deux ponts minimaux sont ajoutés au Bruce pristine (odométrie via /cmd_vel,
-         extraction de features en mode cartésien). Le cœur SLAM est inchangé. -->
     <arg name="rviz" default="true"/>
     <arg name="enable_slam" default="true"/>
     <arg name="bag_file" default="$(find bruce_slam)/../ARACATI_2017_8bits_full.bag"/>
+    <!-- vitesse de rejeu du bag. DISO (méthode directe) se dégrade sous contention
+         CPU en combiné (2.1 m standalone -> 3.2-5.5 m combiné). rate:=0.5 laisse
+         à DISO le temps de converger comme en standalone (cf. les notes d'investigation §5 #1). -->
     <arg name="rate" default="1.0"/>
-    <!-- usbl:=true ancre la dérive cmd_vel avec /usbl_point (acoustique, GT-free) via un
-         filtre complémentaire low-gain dans cmd_vel_odom. Bruce core inchangé. -->
-    <arg name="usbl" default="true"/>
-    <arg name="usbl_gain" default="0.4"/>  <!-- optimum (sweep offline : 3.4 m vs 5.4 m à 0.08) -->
-    <!-- usbl_backend:=true active le facteur USBL back-end (vise ~1.4 m). Dans ce mode,
-         mettre usbl_gain:=0 (cmd_vel_odom seede le repère mais ne corrige pas → ancrage
-         UNIQUE au back-end, pas de double-ancrage). -->
-    <arg name="usbl_backend" default="false"/>
-    <!-- ssm / nssm : modules NATIFS de Bruce (raffinement ICP séquentiel / loop closure).
-         Défaut false = comportement historique. Post-fix miroir (flip_bearing), leurs
-         échecs passés sont caducs → à re-tester via l'ablation A/B (cf. le protocole d'ablation) :
-         SSM=true NSSM=true dans l'environnement de run_slam.sh. -->
-    <arg name="ssm" default="false"/>
-    <arg name="nssm" default="false"/>
+    <!-- source d'odométrie : "cmd_vel" = intégration des vitesses commandées
+         (indépendante de GT, dérive ≈15 m, scénario réaliste) ; "gt" = relay
+         /pose_gt (odométrie = vérité terrain, baseline ATE≈0). -->
+    <arg name="odom_source" default="cmd_vel"/>
+    <!-- usbl:=true fusionne les fixes /usbl_point dans le FRONT-END (cmd_vel_odom).
+         /!\ LAISSER false : l'ancrage USBL se fait dans le BACK-END (usbl.enable=True,
+         slam_aracati.yaml). usbl:=true en plus = DOUBLE ancrage → l'odométrie snappe
+         sur chaque fix bruité (1.4 m, max 73 m) → ZIGZAG, ATE 1.45 -> 4.66 m.
+         Front-end = dead-reckoning LISSE ; back-end = facteurs USBL gtsam. -->
+    <arg name="usbl" default="false"/>
+
+    <!-- Branche ULTIME : réglages de la séquence de runs SANS toucher au yaml.
+         usbl_sigma vide = valeur du yaml (champion 1.4) ; loop_union = U4
+         (candidats SC + gating natif soumis ensemble au PCM). cf. les notes d'analyse -->
+    <arg name="usbl_sigma" default=""/>
+    <arg name="loop_union" default="false"/>
+    <!-- U6 (RU5) : σ USBL adaptatif par fix (dispersion locale, GT-free) -->
+    <arg name="usbl_adaptive" default="false"/>
+    <!-- gt_free_seed:=true = seed 100% GT-FREE : position 1er fix USBL + cap course-over-ground
+         (acoustique, AUCUN /pose_gt). false = ancien seed /pose_gt à t=0 (position+cap GT initial).
+         Validé offline (test_usbl_seed) : pos 0.93 m, cap 13° d'écart (corrigé par USBL back-end). -->
+    <arg name="gt_free_seed" default="true"/>
+    <!-- diso_prior : source du PRIOR de mouvement de DISO (si odom_source=diso).
+         "gt"      = /pose_gt (vérité terrain — encore du GT dans la boucle).
+         "cmd_vel" = odomètre /cmd_vel intégré → DISO GT-FREE. cmd_vel_odom publie sur
+                     /cmd_vel/pose, lu par config_aracati2017_cmdvel.yaml. -->
+    <arg name="diso_prior" default="cmd_vel"/>
+    <!-- diso_seed_gt : True = cmd_vel_odom seedé UNE fois depuis /pose_gt (position
+         initiale connue + cap = COMPAS via quaternion), comme le nœud odom original
+         d'aracati2017. C'est le repère que DISO attend. Réaliste (pose départ connue
+         + compas embarqué). Ensuite odométrie cmd_vel pure. Défaut True. -->
+    <arg name="diso_seed_gt" default="true"/>
 
     <param name="use_sim_time" value="true"/>
 
-    <!-- Lecture du bag Aracati2017 (/son/compressed, /cmd_vel, /pose_gt).
-         required="true" : à la fin du bag, roslaunch arrête tous les nœuds → le SLAM
-         déclenche export_csv (on_shutdown). Pas besoin de Ctrl-C. -->
+    <!-- aracati2017 package not available — nodes commented out -->
+    <!-- <node pkg="aracati2017" name="odom" type="odom" output="screen">
+        <remap from="/pose" to="/pose_gt"/>
+        <param name="odom_frame_id" value="map"/>
+        <param name="base_frame_id" value="son"/>
+    </node> -->
+
+    <!-- <node pkg="aracati2017" name="aerial_image" type="aerial_image" output="screen">
+        <remap from="/odom" to="/odom_pose"/>
+        <remap from="/pose_gt" to="/pose_gt"/>
+        <param name="aerial_image_path" value="$(find aracati2017)/maps/2021-12.yaml"/>
+        <param name="son_fov_openning" value="130.0"/>
+        <param name="son_min_range" value="0.4"/>
+        <param name="son_max_range" value="50.0"/>
+    </node> -->
+
+    <!-- rosbag playback. required=true : à la fin du bag, roslaunch arrête tous les
+         nœuds → le SLAM écrit les CSV au on_shutdown (plus besoin de Ctrl-C, comme
+         sur les branches Bruce et holoocean). les notes de depannage §5. -->
     <node pkg="rosbag" name="rosbag_play" type="play" output="screen" required="true"
           args="$(arg bag_file) --clock -r $(arg rate) -q"/>
 
-    <!-- Odométrie : intégration de /cmd_vel → nav_msgs/Odometry (+ ancrage USBL GT-free) -->
-    <node pkg="bruce_slam" name="cmd_vel_odom" type="cmd_vel_odom_node.py" output="screen">
+    <!-- Odométrie d'entrée du SLAM, publiée sur /direct_sonar/pose (PoseStamped),
+         convertie en Odometry par OdomBridge. Deux sources au choix (odom_source) :
+         - "cmd_vel" : intègre les vitesses commandées (unicycle), seedé GT à t=0
+                       puis indépendant → dérive réaliste. SSM + loops doivent corriger.
+         - "gt"      : relay /pose_gt → odométrie = vérité terrain (baseline ATE≈0).
+         - "diso"    : Direct Sonar Odometry, recalage scan-à-scan → carte
+                       scan-consistent (baseline propre du 06-14, cf. ba8c20b).
+                       Publie nativement sur /direct_sonar/pose. -->
+    <!-- heading_from_compass : DIAGNOSTIC (GT-assisté). true = cap = deltas compas /pose_gt
+         injectés dans l'odométrie (positions intègrent ce cap) au lieu de wz. Sert à tester
+         si un cap parfait dans l'ODOMÉTRIE affine le cloud (question pivot DFLSO). Défaut false
+         (GT-free, wz intégré). cf. branche Bruce_DFLSO. -->
+    <arg name="heading_from_compass" default="false"/>
+    <!-- cmd_vel : intégration unicycle. seed = USBL (GT-free) ou /pose_gt t=0 (gt_free_seed) -->
+    <node if="$(eval arg('odom_source') == 'cmd_vel')"
+          pkg="bruce_slam" name="cmd_vel_odom" type="cmd_vel_odom_node.py" output="screen">
         <param name="use_usbl" value="$(arg usbl)"/>
-        <param name="usbl_gain" value="$(arg usbl_gain)"/>
+        <param name="heading_from_compass" value="$(arg heading_from_compass)"/>
+        <!-- seed_from_usbl prioritaire dans le code ; si false → retombe sur seed_from_gt (t=0) -->
+        <param name="seed_from_usbl" value="$(arg gt_free_seed)"/>
+        <param name="seed_from_initial_pose" value="false"/>
     </node>
+    <!-- odom_pose : même intégration cmd_vel que le nœud original aracati2017 (odom.cpp),
+         /odom_pose n'est PAS dans le bag (calculé à la volée par le nœud odom). -->
+    <node if="$(eval arg('odom_source') == 'odom_pose')"
+          pkg="bruce_slam" name="cmd_vel_odom" type="cmd_vel_odom_node.py" output="screen">
+        <param name="use_usbl" value="$(arg usbl)"/>
+        <param name="heading_from_compass" value="false"/>
+        <!-- seed_from_usbl prioritaire dans le code ; si false → retombe sur seed_from_gt (t=0) -->
+        <param name="seed_from_usbl" value="$(arg gt_free_seed)"/>
+        <param name="seed_from_initial_pose" value="false"/>
+    </node>
+    <node if="$(eval arg('odom_source') == 'gt')"
+          pkg="topic_tools" type="relay" name="gt_to_odom" args="/pose_gt /direct_sonar/pose"/>
+    <!-- DISO avec prior GT (OdomTopic=/pose_gt) -->
+    <node if="$(eval arg('odom_source') == 'diso' and arg('diso_prior') == 'gt')"
+          pkg="bruce_slam" type="diso_launcher.sh" name="diso_node" output="screen"/>
+    <!-- DISO GT-FREE : prior = cmd_vel intégré (/cmd_vel/pose), pas de /pose_gt -->
+    <group if="$(eval arg('odom_source') == 'diso' and arg('diso_prior') == 'cmd_vel')">
+        <node pkg="bruce_slam" name="cmd_vel_odom" type="cmd_vel_odom_node.py" output="screen">
+            <param name="output_topic" value="/cmd_vel/pose"/>
+            <param name="seed_from_initial_pose" value="false"/>
+            <param name="seed_from_gt" value="$(arg diso_seed_gt)"/>
+            <!-- PRIOR DISO = cmd_vel PUR et LISSE (pas de fusion USBL). Ce que DISO
+                 consomme = le mouvement RELATIF ; seed θ=0 → RPE direction 11° (vs 52°
+                 avec seed GT). La fusion USBL injecte des jumps qui dégradent le recalage
+                 DISO (RPE 11°→15°). La dérive absolue est sans effet (DISO recalcule au
+                 sonar) ; l'USBL ancre dans le BACK-END (facteurs graphe), pas ici.
+                 cf. offline_sim/rpe.py. -->
+            <param name="use_usbl" value="false"/>
+        </node>
+        <node pkg="bruce_slam" type="diso_launcher.sh" name="diso_node" output="screen"
+              args="/home/nathanrasami/ros1_ws/src/sonar-SLAM/DISO/config/config_aracati2017_cmdvel.yaml"/>
+    </group>
 
     <group ns="bruce">
         <group ns="slam">
 
-            <!-- Extraction de features (CFAR) sur images sonar cartésiennes Aracati -->
+            <!-- bridge /odom_pose → /bruce/slam/localization/odom -->
+            <node pkg="bruce_slam" name="odom_bridge" type="odom_bridge_node.py" output="screen"/>
+
+            <!-- feature extraction in cartesian mode -->
             <node pkg="bruce_slam" name="feature_extraction" type="feature_extraction_node.py" output="screen">
                 <rosparam command="load" file="$(find bruce_slam)/config/feature_aracati.yaml" subst_value="true"/>
             </node>
 
-            <!-- SLAM (Bruce original : SSM + NSSM + iSAM2) -->
+            <!-- SLAM node -->
             <node pkg="bruce_slam" name="slam" type="slam_node.py" output="screen">
                 <rosparam command="load" file="$(find bruce_slam)/config/slam_aracati.yaml" subst_value="true"/>
+                <!-- flip_y dépend du repère de l'odométrie : DISO a un repère Y réfléchi
+                     (det(R)=-1) → fixes USBL à négliger en Y (True) ; cmd_vel est en repère
+                     monde direct (compas) → pas de flip (False). Surcharge la valeur du yaml
+                     selon odom_source pour éviter l'erreur de repère (ATE 13.9 m sans flip
+                     en DISO). cf. add_usbl slam.py. -->
+                <param name="usbl/flip_y" value="$(eval arg('odom_source') == 'diso')"/>
+                <!-- ULTIME : surcharges de la séquence de runs (cf. les notes d'analyse).
+                     usbl_sigma vide → on garde la valeur du yaml. -->
+                <param name="sonar_context/union" value="$(arg loop_union)"/>
+                <param name="usbl/adaptive" value="$(arg usbl_adaptive)"/>
+                <param unless="$(eval arg('usbl_sigma') == '')"
+                       name="usbl/sigma" value="$(arg usbl_sigma)" type="double"/>
                 <param name="enable_slam" value="$(arg enable_slam)"/>
-                <param name="usbl/enable" value="$(arg usbl_backend)"/>  <!-- test B : ancre USBL back-end -->
-                <param name="ssm/enable" value="$(arg ssm)"/>    <!-- pré-fix : nuisait ; à re-tester post-fix -->
-                <param name="nssm/enable" value="$(arg nssm)"/>  <!-- loop closures natives (surcharge le yaml) -->
-                <!-- dossier de sortie CSV hérité de l'environnement (cf. run_slam.sh) -->
+                <param name="save_fig" value="false"/>
+                <param name="save_data" value="true"/>
+                <!-- SLAM_RESULTS_DIR hérité de l'environnement (cf. run_slam.sh) ;
+                     si absent, le code Python retombe sur results/ par défaut. -->
                 <env name="SLAM_RESULTS_DIR" value="$(optenv SLAM_RESULTS_DIR results)"/>
             </node>
 

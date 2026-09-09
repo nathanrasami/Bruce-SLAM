@@ -97,6 +97,9 @@ class Keyframe(object):
 
         self.points = points.astype(np.float32)  # points in local frame (always 2d)
         self.transf_points = None  # transformed points in global frame based on pose
+        # intensité par point (parallèle à points/transf_points, même ordre) pour le
+        # filtrage du MAP — découplage SLAM/carte (cf. slam_ros). Rempli par slam_ros.
+        self.point_intensity = np.zeros(len(points), np.float32)
 
         self.points3D = points.astype(
             np.float32
