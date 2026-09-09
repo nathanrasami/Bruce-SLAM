@@ -174,10 +174,12 @@ SSM=true NSSM=true USBL=false ./run_slam.sh    # adapted original method
 
 <img src="docs/aracati_result.png" width="1000"/>
 
-Rigidly aligned to the ground truth (Umeyama), the usual ATE convention: the odometry
-alone reaches **10.7 m** of error, while the SLAM stays at **1.38 m** over the 43 min
-survey. Anchored at the first pose instead, without fitting a rotation — a stricter
-convention that exposes accumulated drift — the same run gives 19.7 m and 4.5 m.
+Both trajectories are pinned at the start by **translation only** — no rotation is fitted
+anywhere. This is the strict convention: the orientation of the estimated frame is an
+output of the system, not something the evaluation is allowed to correct. Over the 43 min
+survey the onboard odometry drifts to **20.9 m** of error, while the sonar SLAM stays at
+**1.94 m** (improved method, sonar + USBL). The adapted original method reaches 2.6 to
+3.6 m depending on the run.
 
 On the right, the map built from the optimised poses. The T-shaped pier and the two quays
 come out straight and thin: that is the practical test that the trajectory is right, since
@@ -225,7 +227,7 @@ Sonar resolution is the parameter to watch: 1024 azimuth bins produce a striped 
 | Script | Purpose |
 |---|---|
 | `analysis/sample_data_report.py` | map, SLAM-vs-DR gap, overlay on the aerial view |
-| `analysis/paper_eval.py` | ATE (Umeyama and origin-anchored), map sharpness |
+| `analysis/analyze_origine.py` | ATE pinned at the start, translation only |
 | `analysis/bilan_run.py` | one-image summary of a run |
 | `analysis/view3d_sample_data.py` | interactive 3D HTML of both trajectories |
 
