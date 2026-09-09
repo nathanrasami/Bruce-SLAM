@@ -1,0 +1,29 @@
+{
+  "_comment": "Similitude (East,North) [m] -> pixel du fond analysis/marina_map.png. x_px = A@p + b puis (col, row) = (X[0] - 343, -X[1] - 285). Estimee par ICP entre le nuage du run rep3 et les pixels dessines dans em.gif (frame 816 moins frame 0). APPROXIMATIF : ne peut PAS servir de ground truth, l'alignement est ajuste sur notre propre nuage.",
+  "A": [
+    [
+      4.360133462079432,
+      0.38461891160544814
+    ],
+    [
+      -0.38461891160544825,
+      4.360133462079433
+    ]
+  ],
+  "b": [
+    601.7274822619231,
+    -566.5996209707566
+  ],
+  "origine_px": [
+    343.0,
+    285.0
+  ],
+  "m_par_px": 0.22846360866067159,
+  "rotation_deg": -5.041163475869967,
+  "nn_median_px": null,
+  "run_de_calage": "run_sample_data_2026-09-08_230119_rep3",
+  "source_fond": "bruce_slam/images/em.gif frame 0, crop [285:693, 343:951]",
+  "_correction": "Le 1er calage donnait -30.7 deg / NN 4.88 px : minimum LOCAL, l'init par axes principaux y menait. Un balayage de la rotation initiale sur 360 deg montre le vrai minimum vers -5 deg (NN 0.50 px). La photo est donc quasi alignee avec carte_finale.png.",
+  "dist_med_structures_m": 0.82,
+  "_calage": "v3 : cale sur les STRUCTURES de la photo (Sobel h/v/2 diagonales, seuil p97, champ de distance), plus sur le nuage dessine dans em.gif. Reference independante de tout SLAM. Les deux calages donnent le meme cap a 0.05 deg et la meme echelle a 0.01 % pres ; seule la translation differe de 2.54 m."
+}

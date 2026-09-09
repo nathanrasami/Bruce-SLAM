@@ -1,0 +1,33 @@
+keyframe_duration: 1.0
+keyframe_translation: 0.5
+keyframe_rotation: deg(15)
+
+prior_sigmas: [0.1, 0.1, 0.01]
+odom_sigmas: [0.1, 0.1, 0.01]
+icp_odom_sigmas: [0.1, 0.1, 0.01]
+
+icp_config: $(find bruce_slam)/config/icp.yaml
+
+point_resolution: 0.3
+
+ssm:
+  enable: False
+  min_points: 50
+  max_translation: 3.0
+  max_rotation: deg(30)
+  target_frames: 3
+
+nssm:
+  enable: False
+  min_st_sep: 8
+  min_points: 50
+  max_translation: 10.0
+  max_rotation: deg(60)
+  source_frames: 5
+  cov_samples: 30
+
+pcm_queue_size: 5
+min_pcm: 4
+
+pz_samples: 0
+pz_detection_rate: 0.3

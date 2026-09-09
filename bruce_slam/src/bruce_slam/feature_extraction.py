@@ -14,6 +14,7 @@ from bruce_slam.utils.visualization import apply_custom_colormap
 from bruce_slam import pcl
 import matplotlib.pyplot as plt
 from sonar_oculus.msg import OculusPing, OculusPingUncompressed
+from sensor_msgs.msg import CompressedImage
 from scipy.interpolate import interp1d
 
 from .utils import *
@@ -114,7 +115,26 @@ class FeatureExtraction(object):
         self.color = rospy.get_param(ns + "visualization/color")
 
         #sonar subsciber
-        if self.compressed_images:
+        self.cartesian_mode = rospy.get_param(ns + "cartesian_mode", False)
+        if self.cartesian_mode:
+            self.sonar_fov_deg = rospy.get_param(ns + "cartesian/fov_deg", 130.0)
+            self.sonar_max_range = rospy.get_param(ns + "cartesian/max_range", 50.0)
+            # Cap de portée du NUAGE : au-delà, ce ne sont quasi que l'écho du fond et
+            # le speckle (test poses-GT : 86% des points à >20m, médiane 33m, = arcs).
+            # Couper à ~28m enlève les anneaux sans toucher les structures proches.
+            # Défaut = max_range (aucun cap) pour rester compatible.
+            self.max_cloud_range = rospy.get_param(ns + "cartesian/max_cloud_range",
+                                                   self.sonar_max_range)
+            # flip_bearing : True = y latéral en convention PROPRE (y = +gauche),
+            # cohérente avec l'odométrie cmd_vel/USBL (θ≈ψ monde, det=+1). L'ancien
+            # signe (y = +droite, "même signe que DISO") est un repère MIROITÉ : les
+            # scans se peignent du mauvais côté du cap → carte "tourbillon" (prouvé
+            # offline : NN 0.365→0.208, cellules 0.5m 24223→11673 sur run 150034).
+            # Mettre False UNIQUEMENT en mode odom_source=diso (repère DISO réfléchi).
+            self.flip_bearing = rospy.get_param(ns + "cartesian/flip_bearing", False)
+            self.sonar_sub = rospy.Subscriber(
+                SONAR_TOPIC_CARTESIAN, CompressedImage, self.callback_cartesian, queue_size=10)
+        elif self.compressed_images:
             self.sonar_sub = rospy.Subscriber(
                 SONAR_TOPIC, OculusPing, self.callback, queue_size=10)
         else:
@@ -250,3 +270,107 @@ class FeatureExtraction(object):
 
         #publish the feature message
         self.publish_features(sonar_msg, points)
+
+    def callback_cartesian(self, msg):
+        """Feature extraction on cartesian sonar images from aracati2017 (CompressedImage PNG).
+        L'image BlueView P900-130 est une projection cartésienne MÉTRIQUE :
+        - origine en bas-centre (véhicule), row 0 = loin, row h = proche
+        - les pixels sont des mètres (même échelle m/px en x et y), PAS (range, bearing)
+        - même modèle que DISO (Frame.cpp:110-113 : scale = rows/Range, origine bas-centre)
+        """
+        if not hasattr(self, "_cart_seq"):
+            self._cart_seq = 0
+        self._cart_seq += 1
+        if self._cart_seq % self.skip != 0:
+            self.feature_img = None
+            nan = np.array([[np.nan, np.nan]])
+            self._publish_features_stamped(msg.header, nan)
+            return
+
+        img = np.frombuffer(msg.data, np.uint8)
+        img = cv2.imdecode(img, cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return
+
+        h, w = img.shape
+        half_fov_rad = np.deg2rad(self.sonar_fov_deg / 2.0)
+
+        # CFAR + threshold directly on cartesian image
+        peaks = self.detector.detect(img, self.alg)
+        peaks &= img > self.threshold
+
+        # Publish visualization
+        vis_img = cv2.applyColorMap(img, 2)
+        self.feature_img_pub.publish(ros_numpy.image.numpy_to_image(vis_img, "bgr8"))
+
+        locs = np.c_[np.nonzero(peaks)]  # (row, col)
+        if len(locs) == 0:
+            self._publish_features_stamped(msg.header, np.array([[np.nan, np.nan]]))
+            return
+
+        # Conversion pixel → mètres : l'image est cartésienne métrique, on applique
+        # l'échelle uniforme m/px (interpréter (row,col) comme (range,bearing) serait
+        # faux : ça transforme toute structure verticale en traînée radiale)
+        m_per_px = self.sonar_max_range / float(h)
+        x = (h - locs[:, 0]) * m_per_px        # avant (forward) — même repère que DISO
+        y = (locs[:, 1] - w / 2.0) * m_per_px  # latéral — même signe que DISO (miroité)
+        # NB : le flip_bearing est appliqué DANS _publish_features_stamped (packing),
+        # APRÈS la relecture d'intensité qui inverse pixel↔mètre avec CE signe-ci.
+        points = np.column_stack((x, y))
+
+        # Masque du fan : retire les fausses détections CFAR sur la frontière
+        # fan/padding noir (mêmes marges que DISO Frame.cpp:271-276)
+        r = np.hypot(x, y)
+        bearing = np.arctan2(y, x)
+        keep = (
+            (r > 0.3)
+            & (r < min(self.max_cloud_range, self.sonar_max_range - 0.3))
+            & (np.abs(bearing) < half_fov_rad - 0.05)
+        )
+        points = points[keep]
+        if len(points) == 0:
+            self._publish_features_stamped(msg.header, np.array([[np.nan, np.nan]]))
+            return
+
+        if len(points) and self.resolution > 0:
+            points = pcl.downsample(points, self.resolution)
+
+        if self.outlier_filter_min_points > 1 and len(points) > 0:
+            points = pcl.remove_outlier(
+                points, self.outlier_filter_radius, self.outlier_filter_min_points
+            )
+
+        # Intensité par point, RELUE dans l'image (inversion pixel↔mètre). Permet de
+        # DÉCOUPLER : le SLAM utilise toutes les features (seuil bas, dense → loops),
+        # le MAP ne garde que les retours forts (seuil intensité côté slam_ros). On la
+        # transporte dans le champ Z du nuage feature (inutilisé : le map est 2D).
+        if len(points):
+            rows = np.clip((h - points[:, 0] / m_per_px).astype(int), 0, h - 1)
+            cols = np.clip((points[:, 1] / m_per_px + w / 2.0).astype(int), 0, w - 1)
+            intensity = img[rows, cols].astype(np.float32)
+        else:
+            intensity = np.zeros(len(points), np.float32)
+
+        self._publish_features_stamped(msg.header, points, intensity)
+
+    def _publish_features_stamped(self, header, points, intensity=None):
+        """Publish features using a raw header (for cartesian mode).
+
+        ATTENTION : le nœud SLAM (slam_ros.py) parse le nuage avec
+        (x, -z) — convention du pipeline polaire qui publie [x, *, z].
+        On packe [x_avant, INTENSITÉ, -y_latéral] : le SLAM lit col0=x et
+        col2=-z=y (inchangé), et l'intensité voyage dans le champ Z (col1),
+        inutilisé en 2D, pour le filtrage du MAP. Publier [x, y, 0]
+        écraserait la 2e coordonnée → chaque keyframe deviendrait une ligne.
+        """
+        if intensity is None:
+            intensity = np.zeros(len(points), np.float32)
+        # FIX TOURBILLON : flip_bearing inverse le y latéral livré au SLAM (convention
+        # propre y=+gauche, cohérente avec le cap cmd_vel). Appliqué ICI, après la
+        # relecture d'intensité (qui dépend du signe image d'origine).
+        y_out = points[:, 1] if getattr(self, "flip_bearing", False) else -points[:, 1]
+        points3d = np.c_[points[:, 0], intensity, y_out]
+        feature_msg = n2r(points3d, "PointCloudXYZ")
+        feature_msg.header.stamp = header.stamp
+        feature_msg.header.frame_id = "base_link"
+        self.feature_pub.publish(feature_msg)

@@ -1,4 +1,20 @@
 *.vscode
 *.pyc
-bruce_slam/src/bruce_slam/__pycache__/
-bruce_slam/utils/__pycache__/
+__pycache__/
+
+# datasets and run outputs are not versioned
+*.bag
+BAG_files/
+caves_txt/
+results/
+
+# catkin
+build/
+devel/
+logs/
+
+# latex build
+*.aux
+*.log
+*.out
+*.synctex*

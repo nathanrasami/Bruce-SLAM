@@ -1,0 +1,69 @@
+# SLAM config — Aracati2017. Identique au Bruce-SLAM ORIGINAL (upstream slam.yaml) :
+# le cœur (SSM + NSSM + iSAM2) est inchangé, c'est la baseline "Bruce original" à évaluer.
+
+# how often to add keyframes, this can be varied but between 1 and 4 meters is best
+keyframe_duration: 1.0
+# ⚠ B″ (RU4 114439, 07-04) : 1.0 TESTÉ ET REJETÉ — ATE 17.17 m. Cause : min_st_sep/
+# pcm_queue_size/source_frames sont en KEYFRAMES → à 1.0 m l'exclusion de revisite
+# tombe de ~24 m à ~8 m → fausses loops court-terme dès t=3 min (PIEGES §11).
+# B″-bis possible : 1.0 AVEC fenêtres ×3 (min_st_sep 24, pcm_queue 15,
+# source_frames 15) — cf. le protocole d'ablation. En attendant : 3.0 = champion B′.
+keyframe_translation: 3.0
+keyframe_rotation: deg(30)
+
+# define the noise models
+# x, y, theta in m, m, rad
+prior_sigmas: [0.1, 0.1, 0.01]
+odom_sigmas: [0.2, 0.2, 0.02]
+icp_odom_sigmas: [0.1, 0.1, 0.01]
+
+# pull in the ICP config
+icp_config: $(find bruce_slam)/config/icp.yaml
+
+# Downsample points for ICP/publishing
+point_resolution: 0.5
+
+# Sequential scan matching (SSM)
+# OFF sur Aracati : l'ICP séquentiel sur sonar cartésien sans features produit de
+# mauvaises contraintes qui dégradent l'odométrie cmd_vel (cf. branche Bruce_Sonar :
+# SSM on dégradait cmd_vel 11.5→43.5 m). On garde l'odométrie + les loops NSSM.
+ssm:
+  enable: False # is this module enabled?
+  min_points: 50 # the min number of points to try SSM
+  max_translation: 3.0 # the max translation allowed
+  max_rotation: deg(30) # the max rotation allowed
+  target_frames: 3 # the numeber of frames we compare the current frame to
+
+# Non-sequential scan matching
+nssm:
+  enable: False # TEST 1 : OFF pour isoler l'effet USBL (loops Aracati fausses).
+                # Test 2 : remettre True avec gating USBL des boucles.
+  min_st_sep: 8 # the size of the exclusion zone around the most recent keyframe
+  min_points: 50 #min number of points
+  max_translation: 10.0 # max translation allowed
+  max_rotation: deg(60) # max rotation allowed
+  source_frames: 5 # the number of frames to aggratgate when trying a loop closure
+  cov_samples: 30
+
+# the PCM params for rejecting outlier loop closures
+# min_pcm relevé 2→4 : Aracati génère des loops NSSM fausses (sonar peu discriminant) ;
+# exiger 4 boucles mutuellement cohérentes rejette ces faux positifs.
+pcm_queue_size: 5 # the sliding window size for PCM
+min_pcm: 4 # the min number of pairwise consistent loop closures
+
+# Ancre USBL back-end (GT-free, /usbl_point) — ajoutée dans SLAMNode, slam.py reste pristine.
+# Prior position-only robuste : gtsam fusionne les fixes (~1.4 m) sur tout le graphe (lisseur)
+# → bien meilleur que le filtre front-end causal. Repère aligné par le seed USBL de cmd_vel_odom.
+usbl:
+  enable: False   # activé via le launch (arg usbl_backend) pour les tests B/B'
+  sigma: 2.5      # m — RUN B' (ancre DOUCE). Le test B (sigma 1.0, run 204329) a montré
+                  # qu'une ancre raide DÉGRADE la solution scan-cohérente de SSM+NSSM
+                  # (ATE 2.03 vs 1.95 pour A, murs doublés, cap 2.9° vs 2.3°). B' relâche
+                  # l'ancre pour rabattre le warp uniforme ~1.35 m de A ET l'excursion
+                  # t≈14-15 min (ZÉRO constraint NSSM dans t=13-16.5, mesuré run 214846)
+                  # sans écraser la cohérence locale. Cf. le protocole d'ablation verdict + B'.
+  max_dt: 1.0     # s, fenêtre d'association fix ↔ keyframe
+
+# TODO remove this param
+pz_samples: 0
+pz_detection_rate: 0.3

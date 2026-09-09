@@ -1,0 +1,23 @@
+# Feature extraction config for HoloOcean simulation (polar sensor_msgs/Image)
+# Sonar params: set range_m and fov_deg to match HoloOcean sonar config
+CFAR:
+  Ntc: 20
+  Ngc: 4
+  Pfa: 0.1
+  rank: 10
+  alg: 'SOCA'
+
+filter:
+  threshold: 80
+  resolution: 0.5
+  radius: 1.0
+  min_points: 10
+  skip: 1
+
+visualization:
+  coordinates: 'polar'
+  radius: 2
+  color: [0, 165, 255]
+
+compressed_images: False
+cartesian_mode: False

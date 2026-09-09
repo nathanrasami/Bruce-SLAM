@@ -1,0 +1,66 @@
+<launch>
+    <!-- Bruce-SLAM ORIGINAL sur le dataset Aracati2017.
+         Aracati n'a ni IMU ni DVL et publie des images sonar cartésiennes : seuls
+         deux ponts minimaux sont ajoutés au Bruce pristine (odométrie via /cmd_vel,
+         extraction de features en mode cartésien). Le cœur SLAM est inchangé. -->
+    <arg name="rviz" default="true"/>
+    <arg name="enable_slam" default="true"/>
+    <arg name="bag_file" default="$(find bruce_slam)/../ARACATI_2017_8bits_full.bag"/>
+    <arg name="rate" default="1.0"/>
+    <!-- usbl:=true ancre la dérive cmd_vel avec /usbl_point (acoustique, GT-free) via un
+         filtre complémentaire low-gain dans cmd_vel_odom. Bruce core inchangé. -->
+    <arg name="usbl" default="true"/>
+    <arg name="usbl_gain" default="0.4"/>  <!-- optimum (sweep offline : 3.4 m vs 5.4 m à 0.08) -->
+    <!-- usbl_backend:=true active le facteur USBL back-end (vise ~1.4 m). Dans ce mode,
+         mettre usbl_gain:=0 (cmd_vel_odom seede le repère mais ne corrige pas → ancrage
+         UNIQUE au back-end, pas de double-ancrage). -->
+    <arg name="usbl_backend" default="false"/>
+    <!-- ssm / nssm : modules NATIFS de Bruce (raffinement ICP séquentiel / loop closure).
+         Défaut false = comportement historique. Post-fix miroir (flip_bearing), leurs
+         échecs passés sont caducs → à re-tester via l'ablation A/B (cf. le protocole d'ablation) :
+         SSM=true NSSM=true dans l'environnement de run_slam.sh. -->
+    <arg name="ssm" default="false"/>
+    <arg name="nssm" default="false"/>
+
+    <param name="use_sim_time" value="true"/>
+
+    <!-- Lecture du bag Aracati2017 (/son/compressed, /cmd_vel, /pose_gt).
+         required="true" : à la fin du bag, roslaunch arrête tous les nœuds → le SLAM
+         déclenche export_csv (on_shutdown). Pas besoin de Ctrl-C. -->
+    <node pkg="rosbag" name="rosbag_play" type="play" output="screen" required="true"
+          args="$(arg bag_file) --clock -r $(arg rate) -q"/>
+
+    <!-- Odométrie : intégration de /cmd_vel → nav_msgs/Odometry (+ ancrage USBL GT-free) -->
+    <node pkg="bruce_slam" name="cmd_vel_odom" type="cmd_vel_odom_node.py" output="screen">
+        <param name="use_usbl" value="$(arg usbl)"/>
+        <param name="usbl_gain" value="$(arg usbl_gain)"/>
+    </node>
+
+    <group ns="bruce">
+        <group ns="slam">
+
+            <!-- Extraction de features (CFAR) sur images sonar cartésiennes Aracati -->
+            <node pkg="bruce_slam" name="feature_extraction" type="feature_extraction_node.py" output="screen">
+                <rosparam command="load" file="$(find bruce_slam)/config/feature_aracati.yaml" subst_value="true"/>
+            </node>
+
+            <!-- SLAM (Bruce original : SSM + NSSM + iSAM2) -->
+            <node pkg="bruce_slam" name="slam" type="slam_node.py" output="screen">
+                <rosparam command="load" file="$(find bruce_slam)/config/slam_aracati.yaml" subst_value="true"/>
+                <param name="enable_slam" value="$(arg enable_slam)"/>
+                <param name="usbl/enable" value="$(arg usbl_backend)"/>  <!-- test B : ancre USBL back-end -->
+                <param name="ssm/enable" value="$(arg ssm)"/>    <!-- pré-fix : nuisait ; à re-tester post-fix -->
+                <param name="nssm/enable" value="$(arg nssm)"/>  <!-- loop closures natives (surcharge le yaml) -->
+                <!-- dossier de sortie CSV hérité de l'environnement (cf. run_slam.sh) -->
+                <env name="SLAM_RESULTS_DIR" value="$(optenv SLAM_RESULTS_DIR results)"/>
+            </node>
+
+        </group>
+        <node pkg="tf" name="map_to_world_tf_publisher" type="static_transform_publisher"
+              args="0 0 0 0 0 3.14159 world map 100"/>
+    </group>
+
+    <node if="$(arg rviz)" type="rviz" name="rviz" pkg="rviz"
+          args="-d $(find bruce_slam)/rviz/video.rviz"/>
+
+</launch>
