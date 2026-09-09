@@ -166,16 +166,10 @@ class SLAMNode(SLAM):
                               msg.pose.position.x, msg.pose.position.y, yaw))
 
     def _odom_log_callback(self, msg: Odometry) -> None:
-        """Bufferise le dead reckoning brut à pleine fréquence (-> dead_reckoning.csv).
-        Sur sample_data c'est la fusion IMU+DVL+pression du dead_reckoning_node, seule
-        source d'odométrie du SLAM : z = profondeur, theta = yaw."""
-        q = msg.pose.pose.orientation
-        yaw = np.arctan2(2.0 * (q.w * q.z + q.x * q.y),
-                         1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+        """Bufferise l'odométrie brute à pleine fréquence (pour odometry.csv)."""
         self.odom_poses.append((msg.header.stamp.to_sec(),
                                 msg.pose.pose.position.x,
-                                msg.pose.pose.position.y,
-                                msg.pose.pose.position.z, yaw))
+                                msg.pose.pose.position.y))
 
     def _usbl_callback(self, msg: PointStamped) -> None:
         """Bufferise les fixes USBL (positionnement acoustique, GT-free)."""
@@ -219,11 +213,11 @@ class SLAMNode(SLAM):
         with open(os.path.join(output_dir, "trajectory.csv"), "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["keyframe_id", "time", "x", "y", "theta",
-                        "dr_x", "dr_y", "dr_theta", "nssm_constraints", "dr_z"])
+                        "dr_x", "dr_y", "dr_theta", "nssm_constraints"])
             for i, kf in enumerate(self.keyframes):
                 w.writerow([i, kf.time.to_sec(), kf.pose.x(), kf.pose.y(), kf.pose.theta(),
                             kf.dr_pose.x(), kf.dr_pose.y(), kf.dr_pose.theta(),
-                            len(kf.constraints), kf.dr_pose3.z()])
+                            len(kf.constraints)])
 
         # nuage de points (transf_points monde de tous les keyframes)
         with open(os.path.join(output_dir, "pointcloud.csv"), "w", newline="") as f:
@@ -242,20 +236,11 @@ class SLAMNode(SLAM):
                 w.writerow(["time", "x", "y", "theta"])
                 w.writerows(self.gt_poses)
 
-        # loop closures retenues (kf.constraints = [(target_key, transform)] sur la source)
-        # -> permet de retracer les liens rouges de la vue RViz dans nos figures
-        with open(os.path.join(output_dir, "constraints.csv"), "w", newline="") as f:
-            w = csv.writer(f)
-            w.writerow(["source_id", "target_id"])
-            for i, kf in enumerate(self.keyframes):
-                for target_key, _ in kf.constraints:
-                    w.writerow([i, target_key])
-
-        # dead reckoning brut pleine fréquence (IMU+DVL+pression, aucun sonar)
+        # odométrie brute pleine fréquence (même format que Bruce_Sonar_USBL)
         if self.odom_poses:
-            with open(os.path.join(output_dir, "dead_reckoning.csv"), "w", newline="") as f:
+            with open(os.path.join(output_dir, "odometry.csv"), "w", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["time", "x", "y", "z", "theta"])
+                w.writerow(["time", "x", "y"])
                 w.writerows(self.odom_poses)
         loginfo("CSV exportés dans %s" % output_dir)
 
