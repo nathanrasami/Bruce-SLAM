@@ -47,7 +47,7 @@ pz_detection_rate: 0.3
 # l'aval (shgo, ICP+cov, PCM) est inchangé. enable est surchargé par le launch selon
 # la méthode — laisser False ici. ⚠ dist_threshold et gate_distance sont CALIBRÉS SUR
 # ARACATI (P900/48 m) : sur le sonar holoocean, recalibrer via loops_detected.csv du
-# premier run (viser des retenus tous vrais ; cf. les runs archives partie 2 et les notes de depannage §12 —
+# premier run (viser des retenus tous vrais ; cf. TESTS.md partie 2 et PIEGES.md §12 —
 # ne JAMAIS retirer la porte géométrique).
 sonar_context:
   enable: False
@@ -66,6 +66,6 @@ sonar_context:
   union: False
 # USBL : PAS de capteur USBL dans les bags holoocean → doit rester False
 # (les facteurs d'ancrage absolu de la méthode Aracati n'ont pas de source ici ;
-# si un jour le simulateur publie un équivalent, cf. les garde-fous HoloOcean §5).
+# si un jour le simulateur publie un équivalent, cf. HOLOOCEAN_GARDE_FOU.md §5).
 usbl:
   enable: False

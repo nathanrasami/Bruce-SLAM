@@ -54,7 +54,7 @@ for essai in 1 2 3; do
         echo "=== génération OK, checks E1–E8… ==="
         "$PY" check_traj4.py "$BAG"; rc=$?
         if [ $rc -eq 0 ]; then
-            notifier "traj5 : TOUT PASS [ok]" "$(tail -1 "$LOG") — E1–E8 PASS"
+            notifier "traj5 : TOUT PASS ✅" "$(tail -1 "$LOG") — E1–E8 PASS"
         else
             notifier "traj5 : bag écrit mais E-checks ÉCHEC ⚠" "voir la sortie de check_traj4.py"
         fi

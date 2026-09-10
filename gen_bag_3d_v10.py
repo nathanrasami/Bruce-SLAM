@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generateur traj9 « quais 1 tour, passage SOUS le navire » (la feuille de route 6,
+"""Generateur traj9 « quais 1 tour, passage SOUS le navire » (SUITE.md 6,
 accord Nathan 14-07 soir : 1 SEUL tour entre les 2 quais, plus profond, on
 passe SOUS le navire au lieu de le contourner -> on capte les DEUX quais).
 
@@ -48,7 +48,7 @@ E0_JSONS = [os.path.join(_D, f) for f in
              "probe_traj9_ship3.json")]
 OCTREE_MIN_V10 = 0.05
 SEED_NAV_V10 = 9                      # dedie traj9 (traj8 = 8)
-N_LAPS_V10 = 1                        # la feuille de route : 1 SEUL tour
+N_LAPS_V10 = 1                        # SUITE.md : 1 SEUL tour
 R_TURN_V10 = 4.0
 KEEL_Z = -2.90                        # quille mesuree (E0 pass 1/2)
 

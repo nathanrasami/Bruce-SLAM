@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Genere un bag ROS1 **3D** depuis HoloOcean — le guide HoloOcean 3D **v2** :
+"""Genere un bag ROS1 **3D** depuis HoloOcean — HOLOOCEAN_3D_GUIDE.md **v2** :
 robot A PLAT (roll=0 partout, « grande route »), depart DANS la structure,
 profondeur sinusoidale le long du chemin carre (std(z) trajectoire > 1 m),
 capteurs synthetiques analytiques, ecriture via `rosbags` (pas de ROS).

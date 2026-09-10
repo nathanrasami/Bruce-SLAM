@@ -10,7 +10,7 @@ du bord) est lisse et vrai. On re-rend donc chaque scan avec :
 δ recale le repère odométrique sur le repère carte SANS aucune GT (fit interne au run).
 
 Chiffres 1.2a (003823, I≥255) : NN auto 0.204→0.176 ; carte vs vraie méd 0.114→0.077,
-p90 0.989→0.441 = la borne du rendu au cap GT (0.077/0.440). cf. les notes d'analyse U1.
+p90 0.989→0.441 = la borne du rendu au cap GT (0.077/0.440). cf. ULTIME.md U1.
 
 Usage : python3 analysis/render_compass_cloud.py results/run_aracati_XXX [--imin 255] [--eval]
 Écrit : pointcloud_compass.csv + pointcloud_compass.png dans le dossier du run.
