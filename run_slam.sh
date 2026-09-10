@@ -48,7 +48,7 @@ mkdir -p "$RUN_DIR"
 export SLAM_RESULTS_DIR="$RUN_DIR"
 echo "[run_slam] Résultats dans : $RUN_DIR"
 
-# Modes (cf. le protocole d'ablation pour le protocole complet A/B post-fix miroir) :
+# Modes (cf. ABLATION.md pour le protocole complet A/B post-fix miroir) :
 #   A (Bruce pur)  : SSM=true NSSM=true USBL=false ./run_slam.sh
 #   B (A + ancre)  : SSM=true NSSM=true USBL=true USBL_GAIN=0 USBL_BACKEND=true ./run_slam.sh
 #   (défaut)       : filtre USBL front-end (gain 0.4), SSM/NSSM off → ~3.4 m, Bruce pristine

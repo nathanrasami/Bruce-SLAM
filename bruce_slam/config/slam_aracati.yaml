@@ -7,7 +7,7 @@ keyframe_duration: 1.0
 # pcm_queue_size/source_frames sont en KEYFRAMES → à 1.0 m l'exclusion de revisite
 # tombe de ~24 m à ~8 m → fausses loops court-terme dès t=3 min (PIEGES §11).
 # B″-bis possible : 1.0 AVEC fenêtres ×3 (min_st_sep 24, pcm_queue 15,
-# source_frames 15) — cf. le protocole d'ablation. En attendant : 3.0 = champion B′.
+# source_frames 15) — cf. ABLATION.md. En attendant : 3.0 = champion B′.
 keyframe_translation: 3.0
 keyframe_rotation: deg(30)
 
@@ -61,7 +61,7 @@ usbl:
                   # (ATE 2.03 vs 1.95 pour A, murs doublés, cap 2.9° vs 2.3°). B' relâche
                   # l'ancre pour rabattre le warp uniforme ~1.35 m de A ET l'excursion
                   # t≈14-15 min (ZÉRO constraint NSSM dans t=13-16.5, mesuré run 214846)
-                  # sans écraser la cohérence locale. Cf. le protocole d'ablation verdict + B'.
+                  # sans écraser la cohérence locale. Cf. ABLATION.md verdict + B'.
   max_dt: 1.0     # s, fenêtre d'association fix ↔ keyframe
 
 # TODO remove this param
