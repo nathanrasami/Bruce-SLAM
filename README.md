@@ -6,8 +6,8 @@ Sonar-based graph SLAM for a BlueROV, extended during a 4th-year engineering int
 This is a **fork of [jake3991/sonar-SLAM](https://github.com/jake3991/sonar-SLAM)** — the
 original BlueROV sonar SLAM by **Jinkun Wang**, documented and maintained by
 **John McConnell**. The SLAM core (feature extraction, scan matching, iSAM2 back-end) is
-their work and is left untouched wherever possible. This fork adds a new dataset, a
-simulation pipeline, an acoustic-positioning variant and evaluation tooling.
+their work and is left untouched wherever possible. This fork adds a new dataset, four
+comparable methods, a simulation pipeline and evaluation tooling.
 
 <img src="bruce_slam/images/em.gif" width="1000"/>
 
@@ -16,21 +16,23 @@ simulation pipeline, an acoustic-positioning variant and evaluation tooling.
 | Addition | Detail |
 |---|---|
 | Dataset | **Aracati2017**, a surface vessel with neither IMU nor DVL — bridges are required |
-| Method | sonar SLAM anchored by **USBL** acoustic positioning, fully ground-truth-free |
+| Methods | four variants behind two switches, sonar context and USBL anchoring |
 | Simulation | **HoloOcean** scenario generator producing ROS bags without needing ROS |
-| Evaluation | ATE against ground truth, and a ground-truth-free metric based on harbour structures |
+| Evaluation | start-pinned ATE, and a ground-truth-free metric based on harbour structures |
 
-## Branches
+## Which branch to use
 
-| Branch | Content |
+| Branch | Use it to |
 |---|---|
-| **`main`** | Bruce-SLAM on its own `sample_data.bag`, plus the analysis tooling. Start here. |
-| **`Bruce`** | The original method applied to **Aracati2017**. |
-| **`Bruce_Sonar_USBL`** | **The improved method**: sonar SLAM anchored by USBL acoustic fixes. |
-| **`holoocean`** | **HoloOcean** simulation: scenario generation, bag writing, SLAM on synthetic data. |
+| **`refonte`** | **compare the four methods** on Aracati2017. One launcher, one preset per method, and a gate that checks the comparison is valid. Start here for research work. |
+| **`main`** | run the upstream pipeline on its own `sample_data.bag`. Shortest path to a working install. |
+| `Bruce` | replay the adapted original method on Aracati2017, config frozen on its best run |
+| `Bruce_Sonar_USBL` | replay the sonar + USBL method, config frozen on its best run |
+| `holoocean` | generate synthetic bags and run SLAM on them |
 
-Each branch carries its own `run_slam.sh` presets and its own analysis chain, because the
-sensor suites differ.
+`refonte` is the branch to read if the question is *which method is better*. The three
+frozen branches answer a different question: *reproduce this exact result*. They each
+carry one config and one champion, so a bare `./run_slam.sh` gives the published figure.
 
 ## Installation
 
@@ -62,13 +64,28 @@ Bags are not versioned here. `sample_data.bag` comes from the
 [matheusbg8/aracati2017](https://github.com/matheusbg8/aracati2017), and HoloOcean bags are
 generated locally.
 
+## Evaluation conventions
+
+Read this before comparing any figure in this repository with a figure from elsewhere.
+
+- **Trajectories are pinned at the start by translation only.** No rotation, no
+  reflection, no scale is ever fitted. The orientation of the estimated frame is an output
+  of the system, not something the evaluation may correct. Numbers obtained this way are
+  strictly larger than numbers from a rigid best-fit alignment, and the two are not
+  interchangeable.
+- **Ground truth is never in the estimation loop.** On Aracati2017, `/pose_gt` and the DGPS
+  topics are read only to score a finished run.
+- **A single run is not a result.** The back-end is sensitive to callback timing: on
+  `sample_data.bag`, two runs of the same configuration can differ by 1.5 to 2 m. Repeat a
+  configuration before drawing a conclusion.
+
 ---
 
 # Part 1 — Getting started with `sample_data.bag`
 
-The upstream bag contains exactly the four topics the original code expects, so **no bridge
-is needed**. It is the shortest path to a working run, and the right place to start before
-moving to Aracati2017.
+Branch `main`. The upstream bag contains exactly the four topics the original code expects,
+so **no bridge is needed**. It is the shortest path to a working run, and the right place
+to start before moving to Aracati2017.
 
 | Topic | Rate | Type |
 |---|---|---|
@@ -109,7 +126,7 @@ used instead:
 
 <img src="docs/sample_data_slam_vs_dr.png" width="700"/>
 
-Two configurations are worth knowing, both reachable through `campagne_sample_data.sh`:
+Three configurations, each averaged over repeated runs, through `campagne_sample_data.sh`:
 
 | Configuration | Mean distance to structures | Runs | Note |
 |---|---|---|---|
@@ -117,12 +134,9 @@ Two configurations are worth knowing, both reachable through `campagne_sample_da
 | `icp_odom_sigmas` halved | **1.26 m** | 6 | best accuracy; best single run at 1.18 m |
 | `min_pcm: 3` | 1.30 m | 3 | **bit-identical across runs** |
 
-Figures are averaged over repeated runs of each configuration, since a single run is not
-representative on its own.
-
-The last row matters: with the default `min_pcm: 2`, marginal loop closures are accepted
-or rejected depending on callback timing, and the trajectory moves by 1.5 to 2 m between
-two runs of the same bag. Raising the threshold to 3 makes the pipeline deterministic.
+The last row matters. With the default `min_pcm: 2`, marginal loop closures are accepted
+or rejected depending on callback timing. Raising the threshold to 3 makes the pipeline
+deterministic, for 0.04 m of accuracy. Prefer it whenever a run has to be reproduced.
 
 ---
 
@@ -130,10 +144,7 @@ two runs of the same bag. Raising the threshold to 3 makes the pipeline determin
 
 This is the main subject of the internship. Aracati2017 is a **surface vessel** surveying a
 harbour, and it differs from the BlueROV on every count: **no IMU, no DVL**, and Cartesian
-sonar images instead of `OculusPing`. Getting the original method to run on it, and then
-improving it, is the core of the work.
-
-Branch: `Bruce` for the adapted original method, `Bruce_Sonar_USBL` for the improved one.
+sonar images instead of `OculusPing`.
 
 ## The dataset
 
@@ -155,42 +166,64 @@ Branch: `Bruce` for the adapted original method, `Bruce_Sonar_USBL` for the impr
 The SLAM core is untouched. Two minimal bridges make the dataset usable:
 
 - **Odometry from `/cmd_vel`.** With no IMU and no DVL there is no dead reckoning at all,
-  so thruster commands are integrated into a `nav_msgs/Odometry` stream. This drifts badly
-  — which is precisely what the sonar has to correct.
+  so thruster commands are integrated into a `nav_msgs/Odometry` stream. This drifts badly,
+  which is precisely what the sonar has to correct.
 - **Cartesian feature extraction.** The sonar publishes Cartesian images, not polar pings,
   so CFAR runs in Cartesian mode.
 
-`/pose_gt` and the DGPS topics are read **for evaluation only**. The estimate itself never
-sees them: it is computed from onboard sensors alone.
+## The four methods
 
-## Running it
+Branch `refonte`. Two independent switches, one preset each, nothing else adjustable from
+the launcher:
 
-```bash
-SSM=true NSSM=true USBL=false ./run_slam.sh    # adapted original method
-./analyse.sh run_aracati_<date>
-```
+| Preset | Sonar context | USBL back-end |
+|---|---|---|
+| `./run_slam.sh bruce` | off | off |
+| `./run_slam.sh bruce_u` | off | on, sigma 2.5 |
+| `./run_slam.sh bruce_sonar` | on | off |
+| `./run_slam.sh bsu` | on | on, sigma 1.4 |
+
+Two design rules make the comparison meaningful, and both are enforced rather than
+documented:
+
+- **The odometry is identical in all four presets.** `cmd_vel_odom` never subscribes to
+  USBL — no seed, no correction, no gain. USBL enters only as graph factors, in the
+  presets that use it.
+- **`analysis/gates_refonte.py` validates the run set before any figure is produced.**
+  Four gates, and it returns 0 for pass, 2 for borderline, 1 for fail:
+  1. the four `odometry.csv` are identical, checked rigidly (rotation near zero, residual
+     near zero) — proof that no method touched the odometry;
+  2. the ATE is start-pinned by translation only, globally and over three time sections;
+  3. the ordering `bsu <= bruce_u < bruce` holds, with a 0.10 m tolerance for the known
+     run-to-run ICP variance;
+  4. map quality against the reference cloud, informative only.
+
+Only two config files are involved: `slam_aracati_native.yaml` when sonar context is off,
+`slam_aracati.yaml` when it is on. The launcher picks one and overrides the two switches.
+
+**One result to know before running `bruce_sonar`.** Sonar context without an absolute
+anchor does not converge on this dataset: 0 of 154 loop candidates are accepted, because
+the drift at revisit time (median 9.5 m) exceeds the geometric gate. That preset therefore
+behaves like the odometry alone. It is not a bug, and it is excluded from the ordering
+gate — it is the finding that sonar context and USBL anchoring are complementary rather
+than alternatives.
 
 ## Results
 
 <img src="docs/aracati_result.png" width="1000"/>
 
-Both trajectories are pinned at the start by **translation only** — no rotation is fitted
-anywhere. This is the strict convention: the orientation of the estimated frame is an
-output of the system, not something the evaluation is allowed to correct. Over the 43 min
-survey the onboard odometry drifts to **20.9 m** of error, while the sonar SLAM stays at
-**1.94 m** (improved method, sonar + USBL). The adapted original method reaches 2.6 to
-3.6 m depending on the run.
+Pinned at the start by translation only. Over the 43 min survey the onboard odometry drifts
+to **20.9 m** of error, while the sonar + USBL method stays at **1.94 m**. The adapted
+original method reaches 2.6 to 3.6 m depending on the run.
 
 On the right, the map built from the optimised poses. The T-shaped pier and the two quays
 come out straight and thin: that is the practical test that the trajectory is right, since
 a wrong trajectory smears one structure into several parallel ghosts.
 
-## The improved method: sonar + USBL
+## Why USBL is anchored in the back-end
 
-Branch `Bruce_Sonar_USBL`. USBL fixes are added as **robust unary position factors** in the
-pose graph, constraining x and y while leaving heading free.
-
-Two points that cost time and are worth stating:
+USBL fixes are added as **robust unary position factors**, constraining x and y while
+leaving heading free. Two points that cost time and are worth stating:
 
 - Heading is a **free gauge**. Acoustic positioning alone only half constrains it, so it
   has to come from the scan matching.
@@ -200,7 +233,7 @@ Two points that cost time and are worth stating:
 
 ---
 
-# HoloOcean simulation
+# Part 3 — HoloOcean simulation
 
 Branch `holoocean`. Generates ROS bags from the
 [HoloOcean](https://holoocean.readthedocs.io) simulator: imaging sonar, DVL, IMU and
@@ -226,8 +259,9 @@ Sonar resolution is the parameter to watch: 1024 azimuth bins produce a striped 
 
 | Script | Purpose |
 |---|---|
-| `analysis/sample_data_report.py` | map, SLAM-vs-DR gap, overlay on the aerial view |
+| `analysis/gates_refonte.py` | validates a set of runs before comparing methods |
 | `analysis/analyze_origine.py` | ATE pinned at the start, translation only |
+| `analysis/sample_data_report.py` | map, SLAM-vs-DR gap, overlay on the aerial view |
 | `analysis/bilan_run.py` | one-image summary of a run |
 | `analysis/view3d_sample_data.py` | interactive 3D HTML of both trajectories |
 
