@@ -4,7 +4,7 @@
     <arg name="bag_file" default="$(find bruce_slam)/../ARACATI_2017_8bits_full.bag"/>
     <!-- vitesse de rejeu du bag. DISO (méthode directe) se dégrade sous contention
          CPU en combiné (2.1 m standalone -> 3.2-5.5 m combiné). rate:=0.5 laisse
-         à DISO le temps de converger comme en standalone (cf. les notes d'investigation §5 #1). -->
+         à DISO le temps de converger comme en standalone (cf. FABLE.md §5 #1). -->
     <arg name="rate" default="1.0"/>
     <!-- source d'odométrie : "cmd_vel" = intégration des vitesses commandées
          (indépendante de GT, dérive ≈15 m, scénario réaliste) ; "gt" = relay
@@ -19,7 +19,7 @@
 
     <!-- Branche ULTIME : réglages de la séquence de runs SANS toucher au yaml.
          usbl_sigma vide = valeur du yaml (champion 1.4) ; loop_union = U4
-         (candidats SC + gating natif soumis ensemble au PCM). cf. les notes d'analyse -->
+         (candidats SC + gating natif soumis ensemble au PCM). cf. ULTIME.md -->
     <arg name="usbl_sigma" default=""/>
     <arg name="loop_union" default="false"/>
     <!-- U6 (RU5) : σ USBL adaptatif par fix (dispersion locale, GT-free) -->
@@ -59,7 +59,7 @@
 
     <!-- rosbag playback. required=true : à la fin du bag, roslaunch arrête tous les
          nœuds → le SLAM écrit les CSV au on_shutdown (plus besoin de Ctrl-C, comme
-         sur les branches Bruce et holoocean). les notes de depannage §5. -->
+         sur les branches Bruce et holoocean). PIEGES.md §5. -->
     <node pkg="rosbag" name="rosbag_play" type="play" output="screen" required="true"
           args="$(arg bag_file) --clock -r $(arg rate) -q"/>
 
@@ -138,7 +138,7 @@
                      selon odom_source pour éviter l'erreur de repère (ATE 13.9 m sans flip
                      en DISO). cf. add_usbl slam.py. -->
                 <param name="usbl/flip_y" value="$(eval arg('odom_source') == 'diso')"/>
-                <!-- ULTIME : surcharges de la séquence de runs (cf. les notes d'analyse).
+                <!-- ULTIME : surcharges de la séquence de runs (cf. ULTIME.md).
                      usbl_sigma vide → on garde la valeur du yaml. -->
                 <param name="sonar_context/union" value="$(arg loop_union)"/>
                 <param name="usbl/adaptive" value="$(arg usbl_adaptive)"/>

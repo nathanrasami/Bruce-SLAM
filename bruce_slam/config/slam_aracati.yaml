@@ -52,7 +52,7 @@ sonar_context:
   # densité-intensité) : vraies revisites médiane ~0.53, fausses ~0.75, seuil de
   # Youden 0.695 (TPR 84%, FPR 24%). 0.65 = un peu conservateur (moins de fausses,
   # les restantes filtrées par ICP+PCM). Affiner sur loops_detected.csv du run.
-  dist_threshold: 0.70   # RUN 1.2a (07-03, cf. les configurations#12a) : diag 1.1 post-fix miroir =
+  dist_threshold: 0.70   # RUN 1.2a (07-03, cf. CONFIGS.md#12a) : diag 1.1 post-fix miroir =
                          # +108 candidats VRAIS (0 faux) entre 0.60 et 0.70, la porte géométrique
                          # 20 m filtre en amont et PCM marche enfin (6→82 constraints). L'échec
                          # historique de 0.695 (ATE 5.96) datait du PCM cassé pré-fix : caduc.
@@ -65,7 +65,7 @@ sonar_context:
   # U4 (branche Ultime) : UNION des détecteurs — les candidats du gating natif
   # (covariance+argmax counts) s'AJOUTENT à ceux de SC (dédupliqués), le PCM commun
   # tranche. Piloté au run par LOOP_UNION=true ./run_slam.sh (le launch surcharge).
-  # coût : jusqu'à 2 shgo/keyframe → RATE=0.5 si le CPU sature. cf. les notes d'analyse U4.
+  # coût : jusqu'à 2 shgo/keyframe → RATE=0.5 si le CPU sature. cf. ULTIME.md U4.
   union: False
 
 # USBL — facteurs de POSITION ABSOLUE acoustique dans le graphe (cf. USBL_FACTEURS.md).
@@ -74,7 +74,7 @@ sonar_context:
 # prior unaire robuste (Cauchy) sur x,y seulement (cap laissé à l'odométrie).
 usbl:
   enable: True       # ablation : True pour ancrer sur USBL
-  sigma: 1.4         # [best] CHAMPION (1.2a 003823 + runs finaux BSU_1/2 : 1.45/1.50/1.52,
+  sigma: 1.4         # 🏆 CHAMPION (1.2a 003823 + runs finaux BSU_1/2 : 1.45/1.50/1.52,
                      # méd 1.50 — MEILLEURE médiane du stage). La répétabilité (07-05) a
                      # montré que σ1.8 (ex-branche Ultime : 1.47/1.54/1.60) est ÉQUIVALENT
                      # dans la variance ICP ±0.1 → on garde 1.4. Rejouer un σ :
