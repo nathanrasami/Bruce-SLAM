@@ -37,5 +37,5 @@ cartesian:
   # convention PROPRE (y=+gauche), cohérente avec le cap cmd_vel. L'ancien signe
   # (« même signe que DISO ») peignait chaque scan EN MIROIR du cap → carte
   # tourbillon + SSM/NSSM initialisés à contre-sens (leurs échecs pré-fix sont
-  # caducs, cf. le protocole d'ablation). ⚠ False si odométrie DISO (repère réfléchi).
+  # caducs, cf. ABLATION.md). ⚠ False si odométrie DISO (repère réfléchi).
   flip_bearing: True
