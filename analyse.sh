@@ -33,13 +33,6 @@ run_py() {  # lance un script s'il existe ; n'arrête jamais la chaîne
 }
 
 case "$RUN" in
-  run_sample_data_*)
-    # ===== chaîne SAMPLE_DATA (bag d'origine de Bruce, aucun GT) =====
-    # un seul script : carte_finale (nuage + SLAM + DR) et error_over_time (SLAM<->DR).
-    run_py sample_data_report.py "$CHEMIN"
-    # HTML 3D des deux trajectoires (livrable pour la tutrice) ; ./analyse.sh 3D l'ouvre.
-    run_py view3d_sample_data.py "$CHEMIN"
-    ;;
   run_holoocean_*)
     # ===== chaîne HOLOOCEAN (refactor 07-05) =====
     # un seul script génère : carte_finale, error_over_time (Umeyama + origine),
@@ -51,6 +44,9 @@ case "$RUN" in
     # ===== chaîne ARACATI (historique) =====
     run_py analyze_drift.py        # erreur de trajectoire over time
     run_py analyze_origine.py
+    # figures papier (REFONTE ⛔1) : traj/err/sections en TRANSLATION PURE,
+    # label = nom du run (programmatique, jamais manuel)
+    run_py paper_figs_origine.py "$CHEMIN" --label "$RUN" --out "$CHEMIN"
     run_py plot_trajectories.py
 
     # cloud filtré par intensité — seulement si la colonne existe
@@ -73,15 +69,9 @@ case "$RUN" in
 esac
 
 # bilan compact (1 image : traj+ATE Umeyama, cloud+NN, erreur de cap over time)
-# exige un ground truth — sample_data.bag n'en a pas (4 topics capteurs, aucun GT)
-[ -f "$CHEMIN/groundtruth.csv" ] && run_py bilan_run.py "$CHEMIN"
+run_py bilan_run.py "$CHEMIN"
 
 # carte 3D interactive (./analyse.sh 3D <run>) — en DERNIER : fenêtre bloquante
-if [ -n "$VIEW3D" ]; then
-    case "$RUN" in
-      run_sample_data_*) run_py view3d_sample_data.py "$CHEMIN" --open ;;
-      *)                 run_py view3d.py "$CHEMIN" ;;
-    esac
-fi
+[ -n "$VIEW3D" ] && run_py view3d.py "$CHEMIN"
 
 echo "[analyse] terminé — fichiers dans $CHEMIN"

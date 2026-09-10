@@ -69,15 +69,8 @@ def main(run_dir, theta_ref=None):
     ax.set_title(f"Trajectoire — ATE Umeyama {ate:.2f} m")
     ax.legend(); ax.set_aspect("equal")
     ax = axes[1]
-    # 3D-aware : si le nuage a une colonne z avec du relief, on colore par z
-    if "z" in cloud.dtype.names and np.nanstd(cloud["z"]) > 0.2:
-        sc = ax.scatter(P[:, 0], P[:, 1], s=0.3, c=cloud["z"], cmap="viridis",
-                        alpha=0.6, linewidths=0)
-        plt.colorbar(sc, ax=ax, label="z (m)", shrink=0.8)
-        ax.set_title(f"Pointcloud 3D (z couleur) — {len(P)} pts, NN {nn:.3f} m")
-    else:
-        ax.scatter(P[:, 0], P[:, 1], s=0.15, c="k", alpha=0.4, linewidths=0)
-        ax.set_title(f"Pointcloud — {len(P)} pts, NN {nn:.3f} m")
+    ax.scatter(P[:, 0], P[:, 1], s=0.15, c="k", alpha=0.4, linewidths=0)
+    ax.set_title(f"Pointcloud — {len(P)} pts, NN {nn:.3f} m")
     ax.set_aspect("equal")
     ax = axes[2]
     tm = (traj["time"] - traj["time"][0]) / 60.0

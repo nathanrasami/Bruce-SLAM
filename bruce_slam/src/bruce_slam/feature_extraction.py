@@ -3,6 +3,7 @@ import numpy as np
 import cv2
 import rospy
 from sensor_msgs.msg import PointCloud2, Image
+from std_msgs.msg import Float32MultiArray
 import cv_bridge
 import ros_numpy
 
@@ -12,6 +13,7 @@ from bruce_slam.utils.conversions import *
 from bruce_slam.utils.visualization import apply_custom_colormap
 #from bruce_slam.feature import FeatureExtraction
 from bruce_slam import pcl
+from bruce_slam.sonar_context import build_sonar_context, build_polar_key
 import matplotlib.pyplot as plt
 from sonar_oculus.msg import OculusPing, OculusPingUncompressed
 from sensor_msgs.msg import CompressedImage
@@ -140,6 +142,18 @@ class FeatureExtraction(object):
         else:
             self.sonar_sub = rospy.Subscriber(
                 SONAR_TOPIC_UNCOMPRESSED, OculusPingUncompressed, self.callback, queue_size=10)
+
+        # SONAR Context (place recognition) — descripteur calculé sur l'image
+        self.sonar_context_enable = rospy.get_param(ns + "sonar_context/enable", False)
+        self.sc_num_azimuth = rospy.get_param(ns + "sonar_context/num_azimuth", 40)
+        self.sc_num_range = rospy.get_param(ns + "sonar_context/num_range", 40)
+        # seuil d'intensité du descripteur (densité des retours forts ; cf.
+        # build_sonar_context et sc_descriptor_bench : AUC 0.55→0.86)
+        self.sc_intensity_threshold = rospy.get_param(
+            ns + "sonar_context/intensity_threshold", 95)
+        if self.sonar_context_enable:
+            self.descriptor_pub = rospy.Publisher(
+                SONAR_DESCRIPTOR_TOPIC, Float32MultiArray, queue_size=10)
 
         #feature publish topic
         self.feature_pub = rospy.Publisher(
@@ -292,6 +306,18 @@ class FeatureExtraction(object):
         if img is None:
             return
 
+        # SONAR Context : descripteur calculé sur l'image REPOLARISÉE.
+        # Sur le fan cartésien les colonnes ne sont PAS l'azimuth (FABLE.md §4) :
+        # sans remap, l'équivalence shift-colonne ↔ rotation du descripteur est
+        # fausse et le matching entre passages avec caps différents échoue.
+        # Publié avec le MÊME header.stamp que les features → le SLAM les associe.
+        if self.sonar_context_enable:
+            polar_img = self._polar_remap(img)
+            ctx = build_sonar_context(polar_img, self.sc_num_azimuth,
+                                      self.sc_num_range, self.sc_intensity_threshold)
+            pkey = build_polar_key(ctx)
+            self._publish_descriptor(msg.header, ctx, pkey)
+
         h, w = img.shape
         half_fov_rad = np.deg2rad(self.sonar_fov_deg / 2.0)
 
@@ -299,9 +325,13 @@ class FeatureExtraction(object):
         peaks = self.detector.detect(img, self.alg)
         peaks &= img > self.threshold
 
-        # Publish visualization
-        vis_img = cv2.applyColorMap(img, 2)
-        self.feature_img_pub.publish(ros_numpy.image.numpy_to_image(vis_img, "bgr8"))
+        # Publish visualization (non essentiel : protégé pour ne jamais casser le callback,
+        # ex. "publish() to a closed topic" au démarrage/arrêt)
+        try:
+            vis_img = cv2.applyColorMap(img, 2)
+            self.feature_img_pub.publish(ros_numpy.image.numpy_to_image(vis_img, "bgr8"))
+        except Exception:
+            pass
 
         locs = np.c_[np.nonzero(peaks)]  # (row, col)
         if len(locs) == 0:
@@ -374,3 +404,54 @@ class FeatureExtraction(object):
         feature_msg.header.stamp = header.stamp
         feature_msg.header.frame_id = "base_link"
         self.feature_pub.publish(feature_msg)
+
+    def _polar_remap(self, img):
+        """Rééchantillonne le fan cartésien en image polaire :
+        lignes = range (0 → portée max), colonnes = azimuth (−FOV/2 → +FOV/2),
+        exactement la convention attendue par build_sonar_context.
+        Géométrie : apex en bas-centre (w/2, h), rayon max = h pixels
+        (validée par les données : r_max body = R·sin(62.1°)).
+        Les maps cv2.remap sont mises en cache tant que (h, w) ne change pas."""
+        h, w = img.shape
+        if getattr(self, "_polar_maps_key", None) != (h, w):
+            # résolution : 8 px par case du descripteur (pooling 8x8 ensuite)
+            a_px = self.sc_num_azimuth * 8
+            r_px = self.sc_num_range * 8
+            half = np.deg2rad(self.sonar_fov_deg / 2.0)
+            az = np.linspace(-half, half, a_px, dtype=np.float32)
+            rr = np.linspace(0.0, float(h - 1), r_px, dtype=np.float32)
+            r_grid, a_grid = np.meshgrid(rr, az, indexing="ij")  # (r_px, a_px)
+            self._polar_map_x = (w / 2.0 + r_grid * np.sin(a_grid)).astype(np.float32)
+            self._polar_map_y = (h - r_grid * np.cos(a_grid)).astype(np.float32)
+            self._polar_maps_key = (h, w)
+        return cv2.remap(img, self._polar_map_x, self._polar_map_y,
+                         cv2.INTER_LINEAR, borderValue=0)
+
+    def _publish_descriptor(self, header, context, polar_key):
+        """Publie le descripteur SONAR Context dans un Float32MultiArray.
+
+        Float32MultiArray n'a pas de header → on encode le timestamp en tête du
+        tableau pour que le SLAM associe le descripteur au bon keyframe.
+
+        ATTENTION : float32 ne représente exactement que les entiers < 2^24
+        (16.7 M). Or sec (epoch Unix ~1.5e9) ET nsec (jusqu'à 1e9) dépassent
+        cette borne → un encodage direct corrompt le timestamp de plusieurs
+        dizaines de secondes, la clé ne matche jamais et AUCUN descripteur n'est
+        attaché (bug du run du 13/06 : sc_log vide, 0 boucle). On scinde donc
+        chaque entier 32 bits en deux moitiés 16 bits (< 65536, donc exactes).
+        Format : [sec_hi, sec_lo, nsec_hi, nsec_lo, A, R, context(A*R), key(R)]
+        """
+        A, R = context.shape
+        sec = int(header.stamp.secs)
+        nsec = int(header.stamp.nsecs)
+        ts = [float(sec >> 16), float(sec & 0xFFFF),
+              float(nsec >> 16), float(nsec & 0xFFFF)]
+        flat = np.concatenate([
+            ts,
+            [float(A), float(R)],
+            context.flatten().astype(np.float32),
+            polar_key.astype(np.float32),
+        ]).astype(np.float32)
+        msg = Float32MultiArray()
+        msg.data = flat.tolist()
+        self.descriptor_pub.publish(msg)

@@ -1,0 +1,86 @@
+# slam_aracati_native.yaml — config champion FIGÉE des méthodes SANS Sonar Context
+# (Bruce, Bruce_U). REFONTE (décision Nathan 2026-07-16, après run bruce 80.7 m) :
+# les 2 champions historiques n'ont JAMAIS partagé un yaml — sc=off charge CE fichier
+# (= yaml branche Bruce, runs 223959/233119 : SSM+NSSM natifs, kf 3 m, σ_odom 0.2,
+# sep 8, min_pcm 4), sc=on charge slam_aracati.yaml (champion BSU).
+# ⚠ FIGÉ : ne pas éditer sans décision Nathan + run de re-validation (R3).
+# Le NSSM natif sur le yaml BSU (kf 1 m, sans SSM, sep 30, pcm 6) = 31 fausses
+# loops (quai périodique), graphe tordu +190°, ATE 80.7 m — mesuré run 192435.
+
+keyframe_duration: 1.0
+keyframe_translation: 3.0
+keyframe_rotation: deg(30)
+
+prior_sigmas: [0.1, 0.1, 0.01]
+odom_sigmas: [0.2, 0.2, 0.02]
+icp_odom_sigmas: [0.1, 0.1, 0.01]
+
+icp_config: $(find bruce_slam)/config/icp.yaml
+
+point_resolution: 0.5
+
+# SSM = sequential scan matching (ICP keyframe-à-keyframe). Champion Bruce :
+# ACTIF (« le cap est SA force grâce au SSM », TESTS.md §2.4 — runs SSM=true).
+ssm:
+  enable: True
+  min_points: 50
+  max_translation: 3.0
+  max_rotation: deg(30)
+  target_frames: 3
+
+# NSSM natif (gating covariance + argmax counts) = détecteur de loops des méthodes
+# sans SC. Valeurs branche Bruce (sep 8 keyframes × 3 m = 24 m d'exclusion).
+nssm:
+  enable: True
+  min_st_sep: 8
+  min_points: 50
+  max_translation: 10.0
+  max_rotation: deg(60)
+  source_frames: 5
+  cov_samples: 30
+  # cap des bornes shgo (fix de cette branche, défauts code) — sans lui la
+  # covariance non ancrée gonfle les bornes → shgo ne converge pas.
+  shgo_max_translation: 20.0
+  shgo_max_rotation: deg(180)
+
+pcm_queue_size: 5
+min_pcm: 4
+
+# SC ÉCRASÉ par aracati.launch (arg sc) — False pour les méthodes de ce yaml.
+sonar_context:
+  enable: False
+  knn: 5
+  dist_threshold: 0.70
+  max_azimuth_shift: 10
+  max_range_shift: 5
+  gate_distance: 10.0
+  union: False
+
+# USBL back-end : enable ÉCRASÉ par aracati.launch (arg usbl_backend).
+# σ 2.5 = champion Bruce_U (ancre DOUCE, runs 233119/001730 : 1.74/1.98).
+usbl:
+  enable: False
+  sigma: 2.5
+  flip_y: False
+  max_dt: 1.0
+  max_speed: 3.0
+  adaptive: False
+  adaptive_k: 3.4
+  adaptive_min: 0.9
+  adaptive_max: 3.5
+
+pz_samples: 0
+pz_detection_rate: 0.3
+
+# Blocs rendu/carte : identiques au yaml BSU (mêmes sorties, comparaison à contenu égal).
+map:
+  threshold: 0.0
+
+cloud:
+  use_compass_cap: False
+  cap_offset_deg: 162.0
+
+persistence:
+  enable: False
+  resolution: 3.0
+  min_obs: 35

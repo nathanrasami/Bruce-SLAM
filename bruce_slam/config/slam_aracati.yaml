@@ -1,69 +1,141 @@
-# SLAM config — Aracati2017. Identique au Bruce-SLAM ORIGINAL (upstream slam.yaml) :
-# le cœur (SSM + NSSM + iSAM2) est inchangé, c'est la baseline "Bruce original" à évaluer.
-
-# how often to add keyframes, this can be varied but between 1 and 4 meters is best
 keyframe_duration: 1.0
-# ⚠ B″ (RU4 114439, 07-04) : 1.0 TESTÉ ET REJETÉ — ATE 17.17 m. Cause : min_st_sep/
-# pcm_queue_size/source_frames sont en KEYFRAMES → à 1.0 m l'exclusion de revisite
-# tombe de ~24 m à ~8 m → fausses loops court-terme dès t=3 min (PIEGES §11).
-# B″-bis possible : 1.0 AVEC fenêtres ×3 (min_st_sep 24, pcm_queue 15,
-# source_frames 15) — cf. ABLATION.md. En attendant : 3.0 = champion B′.
-keyframe_translation: 3.0
+keyframe_translation: 1.0
 keyframe_rotation: deg(30)
 
-# define the noise models
-# x, y, theta in m, m, rad
 prior_sigmas: [0.1, 0.1, 0.01]
-odom_sigmas: [0.2, 0.2, 0.02]
+odom_sigmas: [0.5, 0.5, 0.05]   # BASELINE 120154 (cmd_vel). 0.5 = confiance moindre dans
+                                # l'odométrie cmd_vel (cap imprécis) → USBL back-end + loops
+                                # corrigent plus librement. [0.2] était calibré pour DISO (précis).
 icp_odom_sigmas: [0.1, 0.1, 0.01]
 
-# pull in the ICP config
 icp_config: $(find bruce_slam)/config/icp.yaml
 
-# Downsample points for ICP/publishing
 point_resolution: 0.5
 
-# Sequential scan matching (SSM)
-# OFF sur Aracati : l'ICP séquentiel sur sonar cartésien sans features produit de
-# mauvaises contraintes qui dégradent l'odométrie cmd_vel (cf. branche Bruce_Sonar :
-# SSM on dégradait cmd_vel 11.5→43.5 m). On garde l'odométrie + les loops NSSM.
+# SSM — VERDICT FINAL (07-03, runs 1.3 015742 et 1.4 140908) : sur CETTE branche,
+# SSM troque l'ATE contre le cloud : 1.3 (SSM+σ1.4) = MEILLEUR cloud GT-free (NN
+# I≥255 0.204→0.173) mais ATE 1.50→2.14 ; 1.4 (SSM+σ2.5) = 3.13 (pire). → CHAMPION
+# = config 1.2a (SSM off). Pour un livrable "champion cloud", remettre True + σ1.4
+# (= run 1.3). Les verdicts pré-fix (43.5/14.3 m) restent caducs (PIEGES §8).
 ssm:
-  enable: False # is this module enabled?
-  min_points: 50 # the min number of points to try SSM
-  max_translation: 3.0 # the max translation allowed
-  max_rotation: deg(30) # the max rotation allowed
-  target_frames: 3 # the numeber of frames we compare the current frame to
+  enable: False
+  min_points: 50
+  max_translation: 1.5   # serré (3.0→1.5) si réactivé : recalage > 1.5 m suspect → rejeté.
+  max_rotation: deg(30)
+  target_frames: 3
 
-# Non-sequential scan matching
 nssm:
-  enable: False # TEST 1 : OFF pour isoler l'effet USBL (loops Aracati fausses).
-                # Test 2 : remettre True avec gating USBL des boucles.
-  min_st_sep: 8 # the size of the exclusion zone around the most recent keyframe
-  min_points: 50 #min number of points
-  max_translation: 10.0 # max translation allowed
-  max_rotation: deg(60) # max rotation allowed
-  source_frames: 5 # the number of frames to aggratgate when trying a loop closure
+  enable: True
+  min_st_sep: 30
+  min_points: 30
+  max_translation: 8.0
+  max_rotation: deg(45)
+  source_frames: 5
   cov_samples: 30
+  # plafond des bornes de recherche shgo (init ICP global). Sans ce cap, la
+  # covariance accumulée (pas de boucle) gonfle les bornes à ±130 m → shgo ne
+  # converge pas → 0 boucle. 20 m couvre la dérive locale d'une vraie revisite.
+  shgo_max_translation: 20.0
+  shgo_max_rotation: deg(180)
 
-# the PCM params for rejecting outlier loop closures
-# min_pcm relevé 2→4 : Aracati génère des loops NSSM fausses (sonar peu discriminant) ;
-# exiger 4 boucles mutuellement cohérentes rejette ces faux positifs.
-pcm_queue_size: 5 # the sliding window size for PCM
-min_pcm: 4 # the min number of pairwise consistent loop closures
+pcm_queue_size: 5
+min_pcm: 6
 
-# Ancre USBL back-end (GT-free, /usbl_point) — ajoutée dans SLAMNode, slam.py reste pristine.
-# Prior position-only robuste : gtsam fusionne les fixes (~1.4 m) sur tout le graphe (lisseur)
-# → bien meilleur que le filtre front-end causal. Repère aligné par le seed USBL de cmd_vel_odom.
+# SONAR Context (Kim ICRA 2023) : remplace la DÉTECTION de candidat du NSSM
+# (gating covariance + argmax counts) par de la place recognition par
+# apparence. L'aval (shgo, ICP+cov, PCM) est inchangé. Journal des décisions
+# exporté dans loops_detected.csv.
+sonar_context:
+  enable: True           # ÉCRASÉ par aracati.launch (arg sc) à chaque run — REFONTE.
+  knn: 5                 # candidats présélectionnés par la Polar Key
+  # Seuil sur la distance cosinus, calibré sur sc_descriptor_bench.py (descripteur
+  # densité-intensité) : vraies revisites médiane ~0.53, fausses ~0.75, seuil de
+  # Youden 0.695 (TPR 84%, FPR 24%). 0.65 = un peu conservateur (moins de fausses,
+  # les restantes filtrées par ICP+PCM). Affiner sur loops_detected.csv du run.
+  dist_threshold: 0.70   # RUN 1.2a (07-03, cf. CONFIGS.md#12a) : diag 1.1 post-fix miroir =
+                         # +108 candidats VRAIS (0 faux) entre 0.60 et 0.70, la porte géométrique
+                         # 20 m filtre en amont et PCM marche enfin (6→82 constraints). L'échec
+                         # historique de 0.695 (ATE 5.96) datait du PCM cassé pré-fix : caduc.
+                         # Attendu : constraints 82→150+, ATE <1.4. Rollback : 0.60.
+  max_azimuth_shift: 10  # ±10 cases × 3.25°/case = ±32.5° de rotation testée
+  max_range_shift: 5     # ±5 cases × ~1.2 m/case de translation testée
+  # porte géométrique calibrée cmd_vel (cap imprécis → estimé moins fiable que DISO).
+  # Run 100943 : gate=20 m laissait passer 244/659 candidats dont des faux courts-terme.
+  gate_distance: 10.0
+  # U4 (branche Ultime) : UNION des détecteurs — les candidats du gating natif
+  # (covariance+argmax counts) s'AJOUTENT à ceux de SC (dédupliqués), le PCM commun
+  # tranche. Piloté au run par LOOP_UNION=true ./run_slam.sh (le launch surcharge).
+  # coût : jusqu'à 2 shgo/keyframe → RATE=0.5 si le CPU sature. cf. ULTIME.md U4.
+  union: False
+
+# USBL — facteurs de POSITION ABSOLUE acoustique dans le graphe (cf. USBL_FACTEURS.md).
+# Ancre l'odométrie cmd_vel sur les fixes /usbl_point, indépendamment de la GT.
+# Prouvé en sandbox (usbl_sim.py) : ~3 m lisse vs 47 m dead-reckoning. Chaque fix =
+# prior unaire robuste (Cauchy) sur x,y seulement (cap laissé à l'odométrie).
 usbl:
-  enable: False   # activé via le launch (arg usbl_backend) pour les tests B/B'
-  sigma: 2.5      # m — RUN B' (ancre DOUCE). Le test B (sigma 1.0, run 204329) a montré
-                  # qu'une ancre raide DÉGRADE la solution scan-cohérente de SSM+NSSM
-                  # (ATE 2.03 vs 1.95 pour A, murs doublés, cap 2.9° vs 2.3°). B' relâche
-                  # l'ancre pour rabattre le warp uniforme ~1.35 m de A ET l'excursion
-                  # t≈14-15 min (ZÉRO constraint NSSM dans t=13-16.5, mesuré run 214846)
-                  # sans écraser la cohérence locale. Cf. ABLATION.md verdict + B'.
-  max_dt: 1.0     # s, fenêtre d'association fix ↔ keyframe
+  enable: True       # ÉCRASÉ par aracati.launch (arg usbl_backend) à chaque run — REFONTE.
+  sigma: 1.4         # ÉCRASÉ par aracati.launch : 1.4 si sc (BSU), 2.5 sinon (Bruce_U).
+                     # 🏆 CHAMPION (1.2a 003823 + runs finaux BSU_1/2 : 1.45/1.50/1.52,
+                     # méd 1.50 — MEILLEURE médiane du stage). La répétabilité (07-05) a
+                     # montré que σ1.8 (ex-branche Ultime : 1.47/1.54/1.60) est ÉQUIVALENT
+                     # dans la variance ICP ±0.1 → on garde 1.4. Rejouer un σ :
+                     # USBL_SIGMA=x ./run_slam.sh. (SSM+σ2.5 = 3.13 ; Bruce pur → σ2.5.)
+  flip_y: False      # False pour odom_source=cmd_vel (repère monde, compas). Mettre True
+                     # UNIQUEMENT avec odom_source=diso (DISO sort en repère réfléchi Y :
+                     # sans flip → ATE 13.9 m, avec → ~0.9 m).
+  max_dt: 1.0        # s, fenêtre d'association fix ↔ keyframe
+  max_speed: 3.0     # m/s, gate outliers (rejette les sauts ~73 m)
+  # U6 : σ ADAPTATIF PAR FIX, GT-free — TESTÉ ET REJETÉ (RU5 161907 : ATE 1.62 vs
+  # 1.47 pour σ fixe 1.8). Le bruit réel varie bien ×3.5 et le proxy MAD le suit
+  # (corr. 0.64), mais l'imperfection résiduelle sur-raidit par endroits (adaptive_min
+  # 0.9 < champion) → bilan négatif. Variante non testée si on y revient :
+  # adaptive_min: 1.4. Activer : USBL_ADAPTIVE=true ./run_slam.sh.
+  adaptive: False
+  adaptive_k: 3.4
+  adaptive_min: 0.9
+  adaptive_max: 3.5
 
-# TODO remove this param
 pz_samples: 0
 pz_detection_rate: 0.3
+
+# Seuil d'intensité du MAP (découplage SLAM/carte). DÉSACTIVÉ (0) : le découplage
+# seuil-bas a échoué (features denses chargées de fond → ICP loops dégradé). On garde
+# directement le seuil 140 STRUCTURE-ONLY côté feature_extraction, meilleur pour cloud
+# ET loops. L'infra (intensité portée + helper) reste si besoin futur. cf. point-cloud.
+map:
+  threshold: 0.0     # RUN 1.3 (07-03) : export COMPLET (rendu seulement, poses intactes).
+                     # Le filtre 255 se fait désormais OFFLINE (filter_cloud.py / analyse.sh)
+                     # → on peut ENFIN comparer les clouds A↔C au même seuil (65, 140, 255…)
+                     # au lieu de figer le choix au moment du run. L'intensité par point est
+                     # dans le CSV. (Ancien réglage : 255.0, cf. historique git.)
+
+# Cap de RENDU du nuage, découplé de la trajectoire (= C2 inline). Le theta iSAM2 est
+# optimisé pour la POSITION (USBL+loops) → tracke la direction de trajectoire → swirl du
+# cloud. En activant ci-dessous, chaque scan est rendu avec le cap COMPAS (-dr_theta) ;
+# la position x,y reste iSAM2 (trajectoire INCHANGÉE). RViz + CSV directement dé-swirlés.
+# Limite : retire le swirl mais ne reconstruit PAS les doigts du quai (cf. C_CAP_GTFREE).
+cloud:
+  use_compass_cap: False   # GT-free + USBL : la traj est bonne (1.4 m) → le theta POST-OPTIMISEUR
+                           # est le bon cap pour rendre le cloud. (True = ancien hack compas+offset,
+                           # utile seulement quand la traj était mauvaise.)
+  cap_offset_deg: 162.0    # offset repère compas→monde (Aracati) — ignoré si use_compass_cap False
+
+# Filtre de PERSISTANCE du nuage : ne garde que les voxels monde vus depuis >= min_obs
+# keyframes distincts. Retire le backscatter diffus du fond (vu brièvement, balayé) en
+# gardant les vraies structures (murs/quai, vues de plusieurs poses). 100% GT-free.
+# cf. test poses-GT : le swirl = fond, pas l'odométrie.
+persistence:
+  enable: False     # OFF pour reproduire 120154 (baseline meilleure traj, cloud swirl assumé).
+                    # NE réactiver QU'AVEC seuil intensité 140 (sinon inefficace). cf. ci-dessous :
+                    # EFFICACE avec seuil intensité 140 (pas 80). Le retour du fond,
+                    # à range ~constant (vehicle-relatif), balaie → un voxel monde n'est
+                    # vu que brièvement (faible persistance) ; un vrai mur reste en vue
+                    # longtemps (forte). 140 retire le voile faible, la persistance le
+                    # fond brillant balayé. Validé offline run 214019. cf. point-cloud.
+  resolution: 3.0   # m, voxel de comptage. 3m (pas 2) : tolère la dispersion des poses
+                    # cmd_vel → les structures restent CONNECTÉES (2m les fragmentait).
+  # min_obs DÉPEND DU RATE (plus le bag est lent, plus chaque voxel est vu de keyframes) :
+  #   rate 4 → 15 ; rate 2 → 35 ; rate 1 → ~35-50. Réglé pour rate 1 (run final).
+  # À robustifier ensuite (percentile auto, indépendant du rate). On peut resserrer
+  # offline depuis le CSV exporté (qui garde >=min_obs) mais pas desserrer → régler BAS.
+  min_obs: 35

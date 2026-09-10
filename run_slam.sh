@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
-# Lance Bruce-SLAM ORIGINAL sur Aracati2017 dans un dossier de résultats horodaté.
+# Lance une simu SLAM dans un dossier de résultats DÉDIÉ, horodaté et labellisé
+# PROGRAMMATIQUEMENT (jamais de suffixe manuel — piège connu, cf. mémoire).
 #
-# Usage :
-#   ./run_slam.sh                 # Bruce original sur Aracati (bag full)
-#   RATE=0.5 ./run_slam.sh        # rejeu du bag plus lent
-#   BAG=/chemin/vers.bag ./run_slam.sh
+# REFONTE (REFONTE_MISSION.md) — 4 méthodes = 4 presets, 2 interrupteurs (SC × USBL),
+# AUCUN autre réglage de méthode possible ici :
+#   ./run_slam.sh bruce         # SC off, USBL off          (NSSM natif)
+#   ./run_slam.sh bruce_u       # SC off, USBL back-end on  (σ 2.5)
+#   ./run_slam.sh bruce_sonar   # SC on,  USBL off
+#   ./run_slam.sh bsu           # SC on,  USBL back-end on  (σ 1.4)
+#   ./run_slam.sh holoocean     # simulation (branche holoocean)
 #
-# Les CSV (trajectory/pointcloud/groundtruth) sont écrits dans results/run_aracati_<date>/.
-# Analyse :  SLAM_RESULTS_DIR=results/run_aracati_<date> python3 plot_trajectories.py
+# L'odométrie (cmd_vel_odom) est PURE et identique dans les 4 presets (⛔2) ;
+# gate post-runs : analysis/gates_refonte.py (dr identiques ×4, ATE origine, ordre).
+# Env optionnel : BAG=<bag> RATE=<r> RVIZ=false ./run_slam.sh <preset>
+#
+# /!\ UN SEUL run à la fois ; ne RIEN committer/modifier dans le dépôt pendant un run.
+# Les CSV sont écrits dans results/run_<preset>_<date>/. Analyse : ./analyse.sh <run>.
 
 set -e
 
@@ -25,35 +33,28 @@ export ROS_HOSTNAME=localhost
 export ROS_MASTER_URI=http://localhost:11311
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
-
-# ---- sample_data : bag d'ORIGINE de Bruce-SLAM (IMU + DVL + pression + Oculus).
-# Mode offline natif : slam_node lit le bag lui-meme, aucun bridge, code pristine.
-#   ./run_slam.sh sample_data            # run standard
-#   NAME=test RVIZ=true ./run_slam.sh sample_data
-if [ "${1:-}" = "sample_data" ]; then
-    BAG="${BAG:-$HERE/sample_data.bag}"
-    RUN_DIR="$HERE/results/run_sample_data_$(date +%Y-%m-%d_%H%M%S)${NAME:+_$NAME}"
-    mkdir -p "$RUN_DIR"
-    export SLAM_RESULTS_DIR="$RUN_DIR"
-    echo "[run_slam] sample_data -> $RUN_DIR"
-    roslaunch bruce_slam sample_data.launch bag_file:="$BAG" rviz:="${RVIZ:-false}" \
-        2>&1 | tee "$RUN_DIR/run.log"
-    echo "[run_slam] Termine. Analyse : ./analyse.sh $(basename "$RUN_DIR")"
-    exit 0
-fi
-
+TYPE="${1:?Usage: ./run_slam.sh bruce|bruce_u|bruce_sonar|bsu|holoocean}"
 BAG="${BAG:-$HERE/ARACATI_2017_8bits_full.bag}"
-RUN_DIR="$HERE/results/run_aracati_$(date +%Y-%m-%d_%H%M%S)"
+
+case "$TYPE" in
+  bruce)       SC=false; USBL_BACKEND=false ;;
+  bruce_u)     SC=false; USBL_BACKEND=true  ;;
+  bruce_sonar) SC=true;  USBL_BACKEND=false ;;
+  bsu)         SC=true;  USBL_BACKEND=true  ;;
+  holoocean)   ;;
+  *) echo "Preset inconnu: $TYPE (bruce|bruce_u|bruce_sonar|bsu|holoocean)"; exit 1 ;;
+esac
+
+RUN_DIR="$HERE/results/run_${TYPE}_$(date +%Y-%m-%d_%H%M%S)"
 mkdir -p "$RUN_DIR"
 export SLAM_RESULTS_DIR="$RUN_DIR"
-echo "[run_slam] Résultats dans : $RUN_DIR"
+echo "[run_slam] Preset $TYPE → résultats dans : $RUN_DIR"
 
-# Modes (cf. ABLATION.md pour le protocole complet A/B post-fix miroir) :
-#   A (Bruce pur)  : SSM=true NSSM=true USBL=false ./run_slam.sh
-#   B (A + ancre)  : SSM=true NSSM=true USBL=true USBL_GAIN=0 USBL_BACKEND=true ./run_slam.sh
-#   (défaut)       : filtre USBL front-end (gain 0.4), SSM/NSSM off → ~3.4 m, Bruce pristine
-roslaunch bruce_slam aracati.launch bag_file:="$BAG" rate:="${RATE:-1.0}" \
-    usbl:="${USBL:-true}" usbl_gain:="${USBL_GAIN:-0.4}" usbl_backend:="${USBL_BACKEND:-false}" \
-    ssm:="${SSM:-false}" nssm:="${NSSM:-false}"
+if [ "$TYPE" = "holoocean" ]; then
+    roslaunch bruce_slam holoocean.launch
+else
+    roslaunch bruce_slam aracati.launch sc:="$SC" usbl_backend:="$USBL_BACKEND" \
+        bag_file:="$BAG" rate:="${RATE:-1.0}" rviz:="${RVIZ:-true}"
+fi
 
 echo "[run_slam] Terminé. Analyse : ./analyse.sh $(basename "$RUN_DIR")"
