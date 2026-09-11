@@ -317,7 +317,7 @@ class FeatureExtraction(object):
             return
 
         # SONAR Context : descripteur calculé sur l'image REPOLARISÉE.
-        # Sur le fan cartésien les colonnes ne sont PAS l'azimuth (FABLE.md §4) :
+        # Sur le fan cartésien les colonnes ne sont PAS l'azimuth :
         # sans remap, l'équivalence shift-colonne ↔ rotation du descripteur est
         # fausse et le matching entre passages avec caps différents échoue.
         # Publié avec le MÊME header.stamp que les features → le SLAM les associe.

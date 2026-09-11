@@ -2,12 +2,12 @@
 """3D-ready : consomme /sonar_points (PointCloud2 x,y,z,intensity du simulateur)
 et publie directement les FEATURES du SLAM (court-circuite image->CFAR).
 
-Le graphe SLAM reste 2D (projection x,y) — philosophie 4-DOF (FABLE §1) ; la
+Le graphe SLAM reste 2D (projection x,y) — philosophie 4-DOF ; la
 vraie carte 3D se reconstruira OFFLINE (bag + trajectory.csv) quand le bag du
 collègue aura z != 0 (aujourd'hui z=0 partout, cf. SLAM_3D_MIGRATION.md).
 
 Packing = convention aracati : [x_avant, INTENSITÉ, -y_latéral] — le SLAM lit
-(x, -z). ⚠ chiralité à vérifier au 1er run réel (PIEGES §1/§9) : param ~flip_y.
+(x, -z). ⚠ chiralité à vérifier au 1er run réel : param ~flip_y.
 """
 import numpy as np
 import rospy
@@ -22,7 +22,7 @@ class SonarPointsBridge:
     def __init__(self):
         self.intensity_min = rospy.get_param("~intensity_min", 50.0)
         self.voxel = rospy.get_param("~voxel", 0.5)      # m, dédoublonnage grille
-        self.flip_y = rospy.get_param("~flip_y", False)  # chiralité (PIEGES §1)
+        self.flip_y = rospy.get_param("~flip_y", False) # chiralité
         self.pub = rospy.Publisher(SONAR_FEATURE_TOPIC, PointCloud2, queue_size=10)
         rospy.Subscriber("/sonar_points", PointCloud2, self.cb, queue_size=5)
         rospy.loginfo("[sonar_points_bridge] /sonar_points -> %s (I>=%.0f, voxel %.2f m)",

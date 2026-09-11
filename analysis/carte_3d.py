@@ -108,7 +108,7 @@ def main():
     ap.add_argument("--bag", default=None)
     ap.add_argument("--brut", action="store_true",
                     help="désactive le filtre anti-résidus (surface + fantômes "
-                         "hors-plan, cf. FABLE §10-bis / PIEGES #15)")
+                         "hors-plan /)")
     a = ap.parse_args()
     bag_path = a.bag
     if bag_path is None:
@@ -256,7 +256,7 @@ def main():
             # r=prof/cos φ), c'est de la vraie 3D par construction (le fan balaye y-z).
             pts = per_beam_max(pts)
             # ⚠ MIROIR y du profiler des bags v3 SEULEMENT (frame_id=map, traj1-3
-            # jamais réécrits post-fix PIEGES #14) : leurs /profiler_points ont
+            # jamais réécrits post-fix) : leurs /profiler_points ont
             # l'axe y INVERSÉ vs la convention véhicule. Preuve (2026-07-09) :
             # sans flip, les murs de quai du profiler traj3 tombent à x≈+2/+38
             # (au CENTRE) ; avec y négé ils reviennent PILE sur les quais du
@@ -284,7 +284,7 @@ def main():
     bag.close()
     S_full = np.vstack([p for lst in S_by.values() for p in lst])
 
-    # ── Filtre anti-résidus (2026-07-11, FABLE §10-bis) — désactivable --brut ─
+    # ── Filtre anti-résidus (2026-07-11) — désactivable --brut ─
     # Deux artefacts MESURÉS du fan vertical (validés contre le profiler
     # transverse indépendant de traj3, qui ne voit RIEN à ces endroits) :
     #  1. SURFACE : miroir acoustique vu de près quand le robot est haut
@@ -325,7 +325,7 @@ def main():
         return P
 
     # Étendu au profiler transverse (traj6) : même tech de rendu → mêmes
-    # artefacts (surface en miroir + fuite hors-plan, PIEGES #15) ; la coupe
+    # artefacts (surface en miroir + fuite hors-plan) ; la coupe
     # surface, la confirmation 2D (murs vus par le sonar horizontal) et
     # l'exemption fond s'appliquent à l'identique.
     gs_struct = {geo_of[t] for t in retenus}

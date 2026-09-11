@@ -8,7 +8,7 @@ Tourne DANS le conteneur ros1 OU avec le venv hôte : ne lit que
 trajectory.csv / groundtruth.csv / carte_3d.npy (PAS le bag) → à lancer
 APRÈS ./analyse.sh 3D <run>.
 
-Ce qu'il calcule (et pourquoi, cf. TRAJ6_ANALYSE.md) :
+Ce qu'il calcule :
   1. ATE Umeyama SE(2) + cap RMS par run — attendu : traj6 ≈ traj5 (le SLAM ne
      lit que /sonar /dvl /imu /depth, STRICTEMENT identiques entre les 2 bags).
   2. Cartes 3D alignées en MONDE (Umeyama de chaque trajectoire vers sa GT +
@@ -19,7 +19,7 @@ Ce qu'il calcule (et pourquoi, cf. TRAJ6_ANALYSE.md) :
        contenu amené par le transverse : fond hors nadir, flancs continus).
   3. Répartition en z de chaque carte (bande fond z<-17 / structures -17..-2.5).
 ⚠ Ne JAMAIS comparer le NN carte-vs-GT de traj6 au 0.107 m de traj5 : les
-contenus diffèrent (PIEGES #15, NN flatté/défavorisé selon le contenu).
+contenus diffèrent (NN flatté/défavorisé selon le contenu).
 """
 import os
 import sys
@@ -119,7 +119,7 @@ def main():
           "⚠ quasi aucun contenu nouveau : le transverse n'est probablement "
           "PAS entré dans la carte — vérifier dans la sortie de carte_3d.py "
           "que /profiler_points est détecté 'profiler transverse' et retenu."))
-    print("\nRappels d'interprétation (TRAJ6_ANALYSE.md, PIEGES #15/#16) :")
+    print("\nRappels d'interprétation :")
     print("  - ne PAS comparer le NN carte-vs-GT (titre carte_3d) entre runs à")
     print("    contenus différents ; le juge de paix ici = [2] et [3].")
     print("  - un apport élevé avec couverture OK = SUCCÈS traj6, même si le")

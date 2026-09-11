@@ -1,4 +1,4 @@
-"""Round 2 « noise » — source de verite unique (NOISE_MISSION.md, decision
+"""Round 2 « noise » — source de verite unique (decision
 Nathan 2026-07-15). Active par la variable d'environnement NOISE_ROUND2=1.
 
 Sinon (variable absente ou != "1") TOUT est neutre : multiplicateurs = 1.0,
@@ -13,7 +13,7 @@ Facteurs decides (mesures dans PROGRESS 2026-07-15) :
   Derive DR traj9 x2 mesuree a sec = 11.52 m rms (Umeyama 2.30) -> l'assert
   de sanite v8 est elargi a NAV_DRIFT_HI sous round 2 (round 1 garde 8 m).
 
-2026-07-16 : L1 x5 -> x2 (PIEGES #24). A 0.05 le bruit depasse le seuil CFAR 30 :
+2026-07-16 : L1 x5 -> x2. A 0.05 le bruit depasse le seuil CFAR 30 :
 mesure a la source (bags _noise_test x5) 6.4-6.8 % des pixels >= 30 (p99 = 40)
 contre 0.09-0.11 % round 1 (p99 = 7.9) -> nuage x40-90 (1.6-2.2 M pts), KF
 perdus (623/837), 363 fausses contraintes, ATE 67 m : runs inexploitables.
@@ -30,7 +30,7 @@ ON = os.environ.get("NOISE_ROUND2") == "1"
 SUFFIX = "_noise" if ON else ""
 
 # L1 — image sonar (valeurs absolues, pas un multiplicateur : x2 de 0.01 ;
-# 0.05 = inondation CFAR mesuree, cf. docstring + PIEGES #24)
+# 0.05 = inondation CFAR mesuree, cf. docstring +)
 SONAR_ADD = 0.02 if ON else 0.01
 SONAR_MULT = 0.02 if ON else 0.01
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Carte 2D DENSE d'un run holoocean — option B′ de FABLE §9-bis, GT-free.
+"""Carte 2D DENSE d'un run holoocean — option B′ de, GT-free.
 
 Rejoue le détecteur RÉEL du pipeline (CFAR SOCA + seuil + downsample + outlier,
 chaîne exacte de feature_extraction.py:266-293) sur TOUS les pings /sonar du bag
 (la carte du run n'accumule que les keyframes, ~1 ping sur 8), projette le long
 des poses SLAM (trajectory.csv) et voxelise. Deux différences assumées avec le
-pipeline (les deux motivées FABLE §9/§9-bis) :
+pipeline (les deux motivées/§9-bis) :
   - seuil réglable (--seuil 30 par défaut : nos images plafonnent à 0.49 brut,
     le 50 du yaml est calibré sur test.bag du collègue) ;
   - filtre ANTI-BAVURE optionnel (max local en azimut) : la bavure tangentielle
@@ -75,7 +75,7 @@ def main():
             continue
         r = rr * RANGE_MAX / msg.height
         a = np.deg2rad(cc / (msg.width - 1) * 2 * HALF_FOV - HALF_FOV)
-        # y = +r sin(a) : colonnes hautes = BÂBORD (PIEGES #14)
+        # y = +r sin(a) : colonnes hautes = BÂBORD
         pts = np.stack([r * np.cos(a), r * np.sin(a)], axis=1)
         pts = pcl.downsample(pts, RES_DOWNSAMPLE)
         if len(pts) > 0:

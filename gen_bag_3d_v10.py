@@ -93,7 +93,7 @@ v5._init_traj(v5.SEED)                # re-derive tout sur la geometrie v10
 
 def verifier_chemin_v10():
     """Continuite/lacet/z comme v5-v9 + GARDE-FOU E0 : la geometrie du navire
-    n'est connue que par probe (PIEGES #18 : structure inferee != probee)."""
+    n'est connue que par probe (structure inferee != probee)."""
     s = np.arange(0.0, v5.PERIM, 0.5)
     pts = np.array([v5.chemin_median(v)[0] for v in s])
     step = np.linalg.norm(np.diff(pts, axis=0), axis=1)

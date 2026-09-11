@@ -4,7 +4,7 @@
     <arg name="bag_file" default="$(find bruce_slam)/../ARACATI_2017_8bits_full.bag"/>
     <!-- vitesse de rejeu du bag. DISO (méthode directe) se dégrade sous contention
          CPU en combiné (2.1 m standalone -> 3.2-5.5 m combiné). rate:=0.5 laisse
-         à DISO le temps de converger comme en standalone (cf. FABLE.md §5 #1). -->
+         à DISO le temps de converger comme en standalone. -->
     <arg name="rate" default="1.0"/>
     <!-- source d'odométrie : "cmd_vel" = intégration des vitesses commandées
          (indépendante de GT, dérive ≈15 m, scénario réaliste) ; "gt" = relay

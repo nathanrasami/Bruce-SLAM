@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generateur traj6 « tout capter » : traj5 (errance profil collegue, VALIDEE
-run 222233) + 3e capteur = ProfilingSonar TRANSVERSE 360° (FABLE §10-bis,
+run 222233) + 3e capteur = ProfilingSonar TRANSVERSE 360° (
 accord Nathan). La TRAJECTOIRE et les 2 premiers capteurs sont STRICTEMENT
 ceux de traj5 (import gen_bag_3d_v5) : phase A calibration inchangee
 (E2/E4/E6/E7, memes fenetres), errance PCHIP seed 42 inchangee.

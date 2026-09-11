@@ -4,7 +4,7 @@ ou complet). A lancer avec le python du venv holoocean (rosbags + numpy 1.26).
 
 Usage : python check_traj4.py [BAG_files/holoocean_3d_traj4_test.bag]
 Sortie : les mesures + PASS/FAIL, verdict global en code retour (0 = tout PASS).
-E8 (ajoute 07-11, PIEGES #14) : signe LATERAL de /sonar_points (anti-miroir
+E8 (ajoute 07-11) : signe LATERAL de /sonar_points (anti-miroir
 horizontal — E3 ne couvre que l'elevation du fan vertical).
 E9 (ajoute 2026-07-12, traj6) : signe du profiler TRANSVERSE 360°
 (/profiler_points) — lateral (mur du bon cote) + vertical (fond en bas).

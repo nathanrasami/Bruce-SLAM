@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""E10 traj8 : RICHESSE de l'image sonar au detecteur REEL (TRAJ8_DESIGN.md §6).
+"""E10 traj8 : RICHESSE de l'image sonar au detecteur REEL.
 
 Rejoue sur les images /sonar d'un BAG la chaine exacte du pipeline
 (feature_extraction.py:266-293, comme carte_2d_dense.py) : bridge x255 ->
@@ -10,7 +10,7 @@ commande le funnel NSSM : le verrou traj7r etait overlap med 18 < 50
 
 PASS (bag de test traj8) : pings vides <= 20 % ET mediane features/ping >= 25.
 La reference (traj7r, --ref) est mesuree par LE MEME code (echantillonnee).
-Bonus PIEGES #21 : % de pings dont le max mono8 < 5 (aveugles au Sonar
+Bonus : % de pings dont le max mono8 < 5 (aveugles au Sonar
 Context avec intensity_threshold 5).
 
 A lancer DANS le conteneur ros1 (CFAR/pcl compiles) :

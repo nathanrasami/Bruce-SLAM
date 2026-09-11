@@ -17,7 +17,7 @@
    la jambe quai EST file droit x=529 de -626 a -688, au ras du quai.
 
 Le reste = traj6 : errance PCHIP seed 42, z [-12,-2], 2 tours (meme tirage),
-GAMMA 4-5 m, profiler transverse 360° (mount MESURE, PIEGES #16), phase A
+GAMMA 4-5 m, profiler transverse 360° (mount MESURE), phase A
 C1/C2/C3 aux memes fenetres (E2/E4/E6/E7).
 
 Implementation : patch du module v5 (circuit, N_MAX, RANGE_MAX) puis main()

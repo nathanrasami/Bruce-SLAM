@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run_noise2.sh — pipeline round 2 « noise » COMPLET, autonome (~4-6 h) :
 #   ① gen des 2 bags _noise (NOISE_ROUND2=1, L1 ×2 / L2 ×5 / L3 ×2 — noise_round2.py)
-#   ② mesure anti-inondation sur le bag (PIEGES #24 : % pixels ≥ seuil 30 < 1 %)
+# ② mesure anti-inondation sur le bag (% pixels ≥ seuil 30 < 1 %)
 #   ③ 4 runs SLAM {traj9,traj5}_noise × {Bruce, Bruce_Sonar} via slam_2bags.sh
 #   ④ renommage programmatique des dossiers run → *_{B|BS}_{9|5}_2 (labels round 2)
 # S'ARRÊTE net si une étape échoue (E-checks compris) — ne JAMAIS affaiblir un gate.
@@ -17,7 +17,7 @@ pgrep -f 'gen_bag_3d_v(5|10)\.py|roslaunch bruce_slam' >/dev/null \
 echo "=== ① GEN bags _noise (L1 ×2, L2 ×5, L3 ×2) — $(date) ==="
 NOISE_ROUND2=1 FORCE_REGEN=1 ./gen_2bags.sh || { echo "✗ gen ÉCHEC — STOP (voir gen_traj*.log)"; exit 1; }
 
-echo "=== ② Gate anti-inondation (PIEGES #24) — $(date) ==="
+echo "=== ② Gate anti-inondation — $(date) ==="
 podman exec ros1 bash -lc 'source /opt/ros/noetic/setup.bash; python3 - <<PYEOF
 import rosbag, numpy as np, rospy, sys
 ok = True

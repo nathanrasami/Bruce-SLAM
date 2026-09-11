@@ -681,7 +681,7 @@ class SLAMNode(SLAM):
             rospy.loginfo("Sonar Context log saved to %s", sc_path)
 
         # --- Journal funnel NSSM (étage TERMINAL de chaque tentative :
-        # init/shgo/ICP/gates/PCM — diagnostic des rejets aval, PIEGES §10) ---
+        # init/shgo/ICP/gates/PCM — diagnostic des rejets aval) ---
         if getattr(self, "nssm_log", None):
             nssm_path = os.path.join(output_dir, "nssm_attempts.csv")
             with open(nssm_path, "w", newline="") as f:

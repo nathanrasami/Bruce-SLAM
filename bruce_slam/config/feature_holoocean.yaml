@@ -16,7 +16,7 @@ filter:
   # run 1 traj7 à 50 (baseline, valeur validée — à 2-3 m les échos sont plus
   # forts, la bande 26-50 coupée mesurée sur traj6 est peut-être moindre), puis
   # run 2 à 30 = ablation 1 variable. Argumentaire du 30 (bags 15× plus faibles
-  # que test.bag, bruit p99 8-9 → marge ×3 : FABLE §9) reste valable. Témoins
+  # que test.bag, bruit p99 8-9 → marge ×3) reste valable. Témoins
   # seuil 50 : runs 005329 (carte) / 013055 (loops). Journal : PROGRESS 2026-07-12.
   # Run 2 traj7 (2026-07-12 soir) : 50→30 pour l'ablation 1 variable — baseline
   # 50 = run 191325 (ATE 0.058, 2.6 feat/KF : bande 26-50 des pilotis coupée,
@@ -26,7 +26,7 @@ filter:
   # MAIS ATE 0.75 → 5.53 m : l'étape de re-ciblage max-overlap + ICP sur quai
   # périodique insère des facteurs faux mutuellement cohérents que le PCM valide.
   # → 30 reste la référence ; le levier densité passera par octree_min 0.1→0.02-0.05
-  # à la génération traj8 (PROGRESS 2026-07-13 nuit).
+  # à la génération traj8 (2026-07-13).
   threshold: 30
   resolution: 0.5
   radius: 1.0
