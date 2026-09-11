@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inspection d'un ROS bag SANS ROS (lib rosbags) — LE premier réflexe sur tout
-nouveau dataset (cf. HOLOOCEAN_GARDE_FOU.md §3 et DATASETS.md).
+nouveau dataset.
 
 Affiche : topics, types, nombre de messages, cadence, durée ; puis pour chaque
 topic un APERÇU du premier message (champs utiles : tailles de tableaux,

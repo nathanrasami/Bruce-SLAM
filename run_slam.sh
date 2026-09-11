@@ -9,8 +9,8 @@
 #   GT_FREE_SEED=false ./run_slam.sh      # ancien seed /pose_gt t=0 (A/B vs seed USBL GT-free)
 #   ODOM_SOURCE=diso DISO_PRIOR=cmd_vel ./run_slam.sh   # variante DISO GT-free
 #
-# Branche ULTIME (séquence de runs, cf. ULTIME.md) :
-#   RU1-RU4 FAITS (07-04, cf. ULTIME.md Journal) : champion = σ1.8 (FIGÉ dans le yaml,
+# Branche ULTIME (séquence de runs) :
+# RU1-RU4 FAITS (07-04) : champion = σ1.8 (FIGÉ dans le yaml,
 #   ./run_slam.sh nu le reproduit) ; union et B″ rejetés.
 #   USBL_ADAPTIVE=true ./run_slam.sh      # RU5 (U6) : σ USBL adaptatif par fix (GT-free)
 #   USBL_SIGMA=x ./run_slam.sh            # rejouer un σ fixe donné (vide = yaml)
