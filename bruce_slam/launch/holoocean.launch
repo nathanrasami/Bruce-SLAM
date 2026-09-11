@@ -4,7 +4,7 @@
     <group ns="bruce">
         <group ns="slam">
 
-            <!-- GT as odometry source (IMU is broken in current bag — see IMU_ISSUE_REPORT.md) -->
+            <!-- GT as odometry source (IMU is broken in current bag) -->
             <node pkg="topic_tools" type="relay" name="gt_odom_relay"
                   args="/ground_truth /bruce/slam/localization/odom" output="screen"/>
 
