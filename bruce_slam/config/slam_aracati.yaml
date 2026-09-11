@@ -16,7 +16,7 @@ point_resolution: 0.5
 # SSM troque l'ATE contre le cloud : 1.3 (SSM+σ1.4) = MEILLEUR cloud GT-free (NN
 # I≥255 0.204→0.173) mais ATE 1.50→2.14 ; 1.4 (SSM+σ2.5) = 3.13 (pire). → CHAMPION
 # = config 1.2a (SSM off). Pour un livrable "champion cloud", remettre True + σ1.4
-# (= run 1.3). Les verdicts pré-fix (43.5/14.3 m) restent caducs (PIEGES §8).
+# (= run 1.3). Les verdicts pré-fix (43.5/14.3 m) restent caducs.
 ssm:
   enable: False
   min_points: 50
@@ -65,7 +65,7 @@ sonar_context:
   # U4 (branche Ultime) : UNION des détecteurs — les candidats du gating natif
   # (covariance+argmax counts) s'AJOUTENT à ceux de SC (dédupliqués), le PCM commun
   # tranche. Piloté au run par LOOP_UNION=true ./run_slam.sh (le launch surcharge).
-  # coût : jusqu'à 2 shgo/keyframe → RATE=0.5 si le CPU sature. cf. ULTIME.md U4.
+  # coût : jusqu'à 2 shgo/keyframe → RATE=0.5 si le CPU sature.
   union: False
 
 # USBL — facteurs de POSITION ABSOLUE acoustique dans le graphe (cf. USBL_FACTEURS.md).

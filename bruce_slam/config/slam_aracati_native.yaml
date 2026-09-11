@@ -20,7 +20,7 @@ icp_config: $(find bruce_slam)/config/icp.yaml
 point_resolution: 0.5
 
 # SSM = sequential scan matching (ICP keyframe-à-keyframe). Champion Bruce :
-# ACTIF (« le cap est SA force grâce au SSM », TESTS.md §2.4 — runs SSM=true).
+# ACTIF (« le cap est SA force grâce au SSM », runs SSM=true).
 ssm:
   enable: True
   min_points: 50

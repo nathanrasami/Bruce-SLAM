@@ -2,7 +2,7 @@
 # Lance une simu SLAM dans un dossier de résultats DÉDIÉ, horodaté et labellisé
 # PROGRAMMATIQUEMENT (jamais de suffixe manuel — piège connu, cf. mémoire).
 #
-# REFONTE (REFONTE_MISSION.md) — 4 méthodes = 4 presets, 2 interrupteurs (SC × USBL),
+# REFONTE — 4 méthodes = 4 presets, 2 interrupteurs (SC × USBL),
 # AUCUN autre réglage de méthode possible ici :
 #   ./run_slam.sh bruce         # SC off, USBL off          (NSSM natif)
 #   ./run_slam.sh bruce_u       # SC off, USBL back-end on  (σ 2.5)

@@ -2,10 +2,10 @@
 """Intègre /cmd_vel (vitesses commandées, unicycle) en pose absolue et la publie
 sur ODOM_BRIDGE_INPUT_TOPIC (PoseStamped) — dead-reckoning PUR.
 
-REFONTE (REFONTE_MISSION.md, décision ⛔2 « odométrie SACRÉE ») : ce nœud ne
+REFONTE (odométrie SACRÉE) : ce nœud ne
 s'abonne à RIEN d'autre que /cmd_vel. Ni GT, ni USBL — l'ancien code de seed
 USBL / filtre complémentaire / gain est SUPPRIMÉ (un capteur absolu n'entre que
-comme facteurs unaires back-end, cf. PIEGES #25 : le seed route-fond 1 m
+comme facteurs unaires back-end : le seed route-fond 1 m
 tournait tout le repère de −30.88°). Même profil d'odométrie dans les 4
 méthodes ; gate de vérification : traces dr identiques ×4.
 
@@ -19,7 +19,7 @@ Modèle unicycle 2D : sur Aracati seules linear.x (vx) et angular.z (wz) de
 y+=vx·sinθ·dt, θ+=wz·dt (Euler avant, base de temps = header.stamp du bag).
 x, y et θ vivent dans le MÊME repère : aucun offset de seed nulle part, donc
 dr_theta loggé cohérent avec dr_x/dr_y par construction (⛔2, corollaire
-logging de PIEGES #25).
+logging).
 """
 import math
 import rospy

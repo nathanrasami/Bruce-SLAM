@@ -1,12 +1,12 @@
 <launch>
-    <!-- REFONTE (REFONTE_MISSION.md) : les 4 méthodes = 2 interrupteurs, rien d'autre.
+    <!-- REFONTE : les 4 méthodes = 2 interrupteurs, rien d'autre.
              sc:=false usbl_backend:=false   → Bruce        (NSSM natif)
              sc:=false usbl_backend:=true    → Bruce_U
              sc:=true  usbl_backend:=false   → Bruce_Sonar
              sc:=true  usbl_backend:=true    → BSU
          Odométrie = cmd_vel_odom PUR (zéro param, seed (0,0,cap 0) ÉTAPE 0) : identique
          dans les 4 méthodes (gate dr ×4). USBL = facteurs unaires back-end UNIQUEMENT
-         (⛔3 ; PIEGES #2 double ancrage, PIEGES #25 seed). Les anciens args (usbl,
+         (⛔3 ; double ancrage, seed). Les anciens args (usbl,
          gt_free_seed, odom_source, diso_*, usbl_sigma, loop_union, usbl_adaptive,
          heading_from_compass) sont SUPPRIMÉS : la mauvaise config est intapable. -->
     <arg name="sc" default="false"/>
@@ -27,7 +27,7 @@
     <param name="use_sim_time" value="true"/>
 
     <!-- rosbag playback. required=true : à la fin du bag, roslaunch arrête tous les
-         nœuds → le SLAM écrit les CSV au on_shutdown (PIEGES #5). -->
+         nœuds → le SLAM écrit les CSV au on_shutdown. -->
     <node pkg="rosbag" name="rosbag_play" type="play" output="screen" required="true"
           args="$(arg bag_file) --clock -r $(arg rate) -q"/>
 

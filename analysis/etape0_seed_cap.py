@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""ÉTAPE 0 de REFONTE_MISSION.md — trancher le cap de seed par MESURE (offline).
+"""ÉTAPE 0 — trancher le cap de seed par MESURE (offline).
 
 Candidats GT-free :
   (a) cap fixe 0 ;
-  (b) route-fond USBL longue base (PIEGES #25 : base >= 20-30 m). ⚠ Mesuré ici :
+  (b) route-fond USBL longue base (base >= 20-30 m). ⚠ Mesuré ici :
       le ROV tourne de ~-88° (cmd_vel) pendant les 30 premiers mètres → la course
       USBL (~-76°) n'est PAS le cap initial. L'implémentation correcte de (b) est
       un fit de FORME 1-DOF (Kabsch 2D) : θ0 = rotation qui recale la trajectoire
@@ -127,4 +127,4 @@ for D in BASES:
 print("\nθ0_true = Kabsch(cmd_vel θ0=0 → DGPS) : le cap de seed idéal (validation GT).")
 print("θ0_b    = Kabsch(cmd_vel θ0=0 → USBL) : candidat (b), 100% GT-free, offline.")
 print("err(a) = |θ0_true| (coût cap 0) ; err(b) = |θ0_b-θ0_true| ; "
-      "err(b naïf) = coût du seed atan2/course historique. ~1.6 m ATE/° (PIEGES #25).")
+      "err(b naïf) = coût du seed atan2/course historique. ~1.6 m ATE/°.")

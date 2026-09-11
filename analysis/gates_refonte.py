@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""gates_refonte.py — verdict post-runs de la REFONTE (REFONTE_MISSION.md, chantier §5).
+"""gates_refonte.py — verdict post-runs de la REFONTE.
 
 4 gates, verdict imprimé, rien d'affaibli en silence :
   ① dr identiques ×4 : rigid-check des odometry.csv (rotation ~0°, résidu ~0)
