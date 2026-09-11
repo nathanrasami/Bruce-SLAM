@@ -17,7 +17,7 @@
     <arg name="usbl_backend" default="false"/>
     <!-- ssm / nssm : modules NATIFS de Bruce (raffinement ICP séquentiel / loop closure).
          Défaut false = comportement historique. Post-fix miroir (flip_bearing), leurs
-         échecs passés sont caducs → à re-tester via l'ablation A/B (cf. ABLATION.md) :
+         échecs passés sont caducs → à re-tester via l'ablation A/B :
          SSM=true NSSM=true dans l'environnement de run_slam.sh. -->
     <arg name="ssm" default="false"/>
     <arg name="nssm" default="false"/>
