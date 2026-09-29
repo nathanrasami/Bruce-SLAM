@@ -15,7 +15,7 @@ comparable methods, a simulation pipeline and evaluation tooling.
 
 | Addition | Detail |
 |---|---|
-| Dataset | **Aracati2017**, a surface vessel with neither IMU nor DVL — bridges are required |
+| Dataset | **Aracati2017**, an ROV tethered to a surface float, with neither IMU nor DVL — bridges are required |
 | Methods | four variants behind two switches, sonar context and USBL anchoring |
 | Simulation | **HoloOcean** scenario generator producing ROS bags without needing ROS |
 | Evaluation | start-pinned ATE, and a ground-truth-free metric based on harbour structures |
@@ -142,7 +142,7 @@ deterministic, for 0.04 m of accuracy. Prefer it whenever a run has to be reprod
 
 # Part 2 — Aracati2017
 
-This is the main subject of the internship. Aracati2017 is a **surface vessel** surveying a
+This is the main subject of the internship. Aracati2017 is an **ROV** tethered to a surface float, surveying a
 harbour, and it differs from the BlueROV on every count: **no IMU, no DVL**, and Cartesian
 sonar images instead of `OculusPing`.
 
